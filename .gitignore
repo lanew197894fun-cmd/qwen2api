@@ -1,0 +1,9 @@
+node_modules/
+.chrome-qwen-profile/
+data/
+logs/
+*.log
+.env
+dist/
+.idea
+/public/dist
