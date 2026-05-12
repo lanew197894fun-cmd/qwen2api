@@ -1,0 +1,28 @@
+{
+  "name": "qwen2api-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "npx tsc",
+    "typecheck": "npx tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./server": "./src/index.js"
+  },
+  "opencode": {
+    "plugins": [
+      "."
+    ]
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.14.41",
+    "@opencode-ai/sdk": "^1.14.41",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
