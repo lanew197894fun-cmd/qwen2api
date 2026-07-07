@@ -18,8 +18,8 @@ const sleep = async (ms) => {
 
 const sha256Encrypt = (text) => {
   if (typeof text !== 'string') {
-    logger.error('輸入必須是字串型別', 'TOOLS')
-    throw new Error('輸入必須是字串型別')
+    logger.error('輸入必須是字符串類型', 'TOOLS')
+    throw new Error('輸入必須是字符串類型')
   }
   const hash = crypto.createHash('sha256')
   hash.update(text, 'utf-8')
@@ -37,9 +37,9 @@ const JwtDecode = (token) => {
 }
 
 /**
- * 生成UUID v4
- * 使用Node.js內建的crypto.randomUUID()
- * @returns {string} UUID v4字串
+ * 產生UUID v4
+ * 使用Node.js內置的crypto.randomUUID()
+ * @returns {string} UUID v4字符串
  */
 const generateUUID = () => {
   return crypto.randomUUID()

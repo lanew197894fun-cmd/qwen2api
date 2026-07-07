@@ -1,8 +1,11 @@
 const express = require('express')
 const router = express.Router()
 const config = require('../config')
+const DataPersistence = require('../utils/data-persistence')
 const { apiKeyVerify, adminKeyVerify } = require('../middlewares/authorization')
 const { logger } = require('../utils/logger')
+
+const dataPersistence = new DataPersistence()
 
 
 router.get('/settings', adminKeyVerify, async (req, res) => {
@@ -20,7 +23,9 @@ router.get('/settings', adminKeyVerify, async (req, res) => {
     batchLoginConcurrency: config.batchLoginConcurrency,
     outThink: config.outThink,
     searchInfoMode: config.searchInfoMode,
-    simpleModelMap: config.simpleModelMap
+    simpleModelMap: config.simpleModelMap,
+    chatRetryCount: config.chatRetryCount,
+    chatRetryBackoffMs: config.chatRetryBackoffMs
   })
 })
 
@@ -40,7 +45,9 @@ router.post('/addRegularKey', adminKeyVerify, async (req, res) => {
     // 新增到配置中
     config.apiKeys.push(apiKey)
 
-    res.json({ message: 'API Key新增成功' })
+    const persisted = await dataPersistence.saveSettings({ apiKeys: config.apiKeys })
+
+    res.json({ message: 'API Key新增成功', persisted })
   } catch (error) {
     logger.error('新增API Key失敗', 'CONFIG', '', error)
     res.status(500).json({ error: error.message })
@@ -68,7 +75,9 @@ router.post('/deleteRegularKey', adminKeyVerify, async (req, res) => {
 
     config.apiKeys.splice(index, 1)
 
-    res.json({ message: 'API Key刪除成功' })
+    const persisted = await dataPersistence.saveSettings({ apiKeys: config.apiKeys })
+
+    res.json({ message: 'API Key刪除成功', persisted })
   } catch (error) {
     logger.error('刪除API Key失敗', 'CONFIG', '', error)
     res.status(500).json({ error: error.message })
@@ -102,22 +111,22 @@ router.post('/setAutoRefresh', adminKeyVerify, async (req, res) => {
   }
 })
 
-// 更新批次登入併發數
+// 更新批量登入併發數
 router.post('/setBatchLoginConcurrency', adminKeyVerify, async (req, res) => {
   try {
     const concurrency = parseInt(req.body.batchLoginConcurrency)
 
     if (isNaN(concurrency) || concurrency < 1 || concurrency > 20) {
-      return res.status(400).json({ error: '無效的批次登入併發數，允許範圍為 1-20' })
+      return res.status(400).json({ error: '無效的批量登入併發數，允許範圍為 1-20' })
     }
 
     config.batchLoginConcurrency = concurrency
     res.json({
       status: true,
-      message: '批次登入併發數更新成功'
+      message: '批量登入併發數更新成功'
     })
   } catch (error) {
-    logger.error('更新批次登入併發數失敗', 'CONFIG', '', error)
+    logger.error('更新批量登入併發數失敗', 'CONFIG', '', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -141,40 +150,80 @@ router.post('/setOutThink', adminKeyVerify, async (req, res) => {
   }
 })
 
-// 更新搜尋資訊模式
+// 更新搜索資訊模式
 router.post('/search-info-mode', adminKeyVerify, async (req, res) => {
   try {
     const { searchInfoMode } = req.body
     if (!['table', 'text'].includes(searchInfoMode)) {
-      return res.status(400).json({ error: '無效的搜尋資訊模式' })
+      return res.status(400).json({ error: '無效的搜索資訊模式' })
     }
 
     config.searchInfoMode = searchInfoMode
     res.json({
       status: true,
-      message: '搜尋資訊模式更新成功'
+      message: '搜索資訊模式更新成功'
     })
   } catch (error) {
-    logger.error('更新搜尋資訊模式失敗', 'CONFIG', '', error)
+    logger.error('更新搜索資訊模式失敗', 'CONFIG', '', error)
     res.status(500).json({ error: error.message })
   }
 })
 
-// 更新簡化模型對映設定
+// 更新聊天請求 retry 配置
+router.post('/setRetryConfig', adminKeyVerify, async (req, res) => {
+  try {
+    const { chatRetryCount, chatRetryBackoffMs } = req.body
+    const count = parseInt(chatRetryCount, 10)
+    const backoff = parseInt(chatRetryBackoffMs, 10)
+
+    if (isNaN(count) || count < 0 || count > 10) {
+      return res.status(400).json({ error: '無效的 retry 次數，允許範圍為 0-10' })
+    }
+    if (isNaN(backoff) || backoff < 0 || backoff > 60000) {
+      return res.status(400).json({ error: '無效的 backoff 毫秒數，允許範圍為 0-60000' })
+    }
+
+    config.chatRetryCount = count
+    config.chatRetryBackoffMs = backoff
+
+    // 持久化 (在 'none' 模式下 saveSettings вернёт false, но это ОК — env baseline остаётся)
+    const persisted = await dataPersistence.saveSettings({
+      chatRetryCount: count,
+      chatRetryBackoffMs: backoff
+    })
+
+    logger.info(
+      `聊天 retry 配置更新: count=${count}, backoff=${backoff}ms (持久化: ${persisted ? '是' : '否'})`,
+      'CONFIG',
+      '⚙️'
+    )
+
+    res.json({
+      status: true,
+      message: '聊天 retry 配置更新成功',
+      persisted
+    })
+  } catch (error) {
+    logger.error('更新聊天 retry 配置失敗', 'CONFIG', '', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 更新簡化模型映射設定
 router.post('/simple-model-map', adminKeyVerify, async (req, res) => {
   try {
     const { simpleModelMap } = req.body
     if (typeof simpleModelMap !== 'boolean') {
-      return res.status(400).json({ error: '無效的簡化模型對映設定' })
+      return res.status(400).json({ error: '無效的簡化模型映射設定' })
     }
 
     config.simpleModelMap = simpleModelMap
     res.json({
       status: true,
-      message: '簡化模型對映設定更新成功'
+      message: '簡化模型映射設定更新成功'
     })
   } catch (error) {
-    logger.error('更新簡化模型對映設定失敗', 'CONFIG', '', error)
+    logger.error('更新簡化模型映射設定失敗', 'CONFIG', '', error)
     res.status(500).json({ error: error.message })
   }
 })

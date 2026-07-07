@@ -1,20 +1,20 @@
-// 匯入指紋生成器
+// 匯入指紋產生器
 const { generateFingerprint } = require('./fingerprint');
 
-// 自定義Base64字元表
+// 自定義Base64字符表
 const CUSTOM_BASE64_CHARS = "DGi0YA7BemWnQjCl4_bR3f8SKIF9tUz/xhr2oEOgPpac=61ZqwTudLkM5vHyNXsVJ";
 
-// 雜湊欄位位置（這些欄位需要隨機生成）
+// 哈希字段位置（這些字段需要隨機產生）
 const HASH_FIELDS = {
-    16: 'split',  // 外掛雜湊（格式: count|hash，只替換hash部分）
-    17: 'full',   // Canvas指紋雜湊
-    18: 'full',   // UserAgent雜湊
-    31: 'full',   // UserAgent雜湊2
-    34: 'full',   // 檔案URL雜湊
-    36: 'full'    // 檔案屬性雜湊
+    16: 'split',  // 插件哈希（格式: count|hash，只替換hash部分）
+    17: 'full',   // Canvas指紋哈希
+    18: 'full',   // UserAgent哈希
+    31: 'full',   // UserAgent哈希2
+    34: 'full',   // 文檔URL哈希
+    36: 'full'    // 文檔屬性哈希
 };
 
-// ==================== LZW壓縮演算法 ====================
+// ==================== LZW壓縮算法 ====================
 
 function lzwCompress(data, bits, charFunc) {
     if (data == null) return '';
@@ -282,20 +282,20 @@ function processFields(fields) {
     const processed = [...fields];
     const currentTimestamp = Date.now();
 
-    // 替換雜湊欄位
+    // 替換哈希字段
     for (const [index, type] of Object.entries(HASH_FIELDS)) {
         const idx = parseInt(index);
 
         if (type === 'split') {
-            // 欄位16: 格式為 "count|hash"，只替換hash部分
+            // 字段16: 格式為 "count|hash"，只替換hash部分
             const parts = processed[idx].split('|');
             if (parts.length === 2) {
                 processed[idx] = `${parts[0]}|${randomHash()}`;
             }
         } else if (type === 'full') {
-            // 完全替換為隨機雜湊
+            // 完全替換為隨機哈希
             if (idx === 36) {
-                // 欄位36: 檔案屬性雜湊（10-100的隨機整數）
+                // 字段36: 文檔屬性哈希（10-100的隨機整數）
                 processed[idx] = Math.floor(Math.random() * 91) + 10;
             } else {
                 processed[idx] = randomHash();
@@ -303,37 +303,37 @@ function processFields(fields) {
         }
     }
 
-    processed[33] = currentTimestamp;  // 欄位33: 當前時間戳
+    processed[33] = currentTimestamp;  // 字段33: 目前時間戳
 
     return processed;
 }
 
-// ==================== Cookie生成 ====================
+// ==================== Cookie產生 ====================
 
 function generateCookies(realData = null, fingerprintOptions = {}) {
-    // 使用傳入的指紋或生成新的隨機指紋
+    // 使用傳入的指紋或產生新的隨機指紋
     const fingerprint = realData || generateFingerprint(fingerprintOptions);
 
     // 解析指紋資料
     const fields = parseRealData(fingerprint);
 
-    // 處理欄位（隨機化雜湊，更新時間戳）
+    // 處理字段（隨機化哈希，更新時間戳）
     const processedFields = processFields(fields);
 
-    // 生成 ssxmod_itna (37欄位)
+    // 產生 ssxmod_itna (37字段)
     const ssxmod_itna_data = processedFields.join('^');
     const ssxmod_itna = '1-' + customEncode(ssxmod_itna_data, true);
 
-    // 生成 ssxmod_itna2 (18欄位)
-    // 只使用: 欄位0, 欄位1, 欄位23, 欄位32, 欄位33
+    // 產生 ssxmod_itna2 (18字段)
+    // 只使用: 字段0, 字段1, 字段23, 字段32, 字段33
     const ssxmod_itna2_data = [
-        processedFields[0],   // 裝置ID
+        processedFields[0],   // 設備ID
         processedFields[1],   // SDK版本
         processedFields[23],  // 模式 (P/M)
         0, '', 0, '', '', 0,  // 事件相關（P模式下為空）
         0, 0,
         processedFields[32],  // 常量 (11)
-        processedFields[33],  // 當前時間戳
+        processedFields[33],  // 目前時間戳
         0, 0, 0, 0, 0
     ].join('^');
     const ssxmod_itna2 = '1-' + customEncode(ssxmod_itna2_data, true);
@@ -355,7 +355,7 @@ function generateBatch(count = 10, realData = null, fingerprintOptions = {}) {
     return results;
 }
 
-// ==================== 主程式 ====================
+// ==================== 主程序 ====================
 
 if (require.main === module) {
     const result = generateCookies();

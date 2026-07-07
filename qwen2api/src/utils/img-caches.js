@@ -71,7 +71,7 @@ class imgCacheManager {
         }
       }
     } catch (e) {
-      logger.error('獲取快取失敗', 'CACHE', '', e)
+      logger.error('取得快取失敗', 'CACHE', '', e)
       return {
         status: 500,
         url: null

@@ -7,17 +7,17 @@ const {
 } = require("./proxy-helper");
 
 /**
- * 為 PKCE 生成隨機程式碼驗證器
- * @returns {string} 43-128個字元的隨機字串
+ * 為 PKCE 產生隨機代碼驗證器
+ * @returns {string} 43-128個字符的隨機字符串
  */
 function generateCodeVerifier() {
   return crypto.randomBytes(32).toString("base64url");
 }
 
 /**
- * 使用 SHA-256 從程式碼驗證器生成程式碼挑戰
- * @param {string} codeVerifier - 程式碼驗證器字串
- * @returns {string} 程式碼挑戰字串
+ * 使用 SHA-256 從代碼驗證器產生代碼挑戰
+ * @param {string} codeVerifier - 代碼驗證器字符串
+ * @returns {string} 代碼挑戰字符串
  */
 function generateCodeChallenge(codeVerifier) {
   const hash = crypto.createHash("sha256");
@@ -26,7 +26,7 @@ function generateCodeChallenge(codeVerifier) {
 }
 
 /**
- * 生成 PKCE 程式碼驗證器和挑戰對
+ * 產生 PKCE 代碼驗證器和挑戰對
  * @returns {Object} 包含 code_verifier 和 code_challenge 的物件
  */
 function generatePKCEPair() {
@@ -40,9 +40,9 @@ function generatePKCEPair() {
 
 class CliAuthManager {
   /**
-   * 讀取響應體
-   * @param {Response} response - Fetch 響應物件
-   * @returns {Promise<*>} 響應體
+   * 讀取回應體
+   * @param {Response} response - Fetch 回應物件
+   * @returns {Promise<*>} 回應體
    */
   async readResponseBody(response) {
     const contentType = response.headers.get("content-type") || "";
@@ -64,12 +64,12 @@ class CliAuthManager {
   }
 
   /**
-   * 啟動 OAuth 裝置授權流程
-   * @param {Object} [account] - Qwen 帳戶物件（用於解析帳號級代理）
-   * @returns {Promise<Object>} 包含裝置程式碼、驗證URL和程式碼驗證器的物件
+   * 啟動 OAuth 設備授權流程
+   * @param {Object} [account] - Qwen 賬戶物件（用於解析帳號級代理）
+   * @returns {Promise<Object>} 包含設備代碼、驗證URL和代碼驗證器的物件
    */
   async initiateDeviceFlow(account) {
-    // 生成 PKCE 程式碼驗證器和挑戰
+    // 產生 PKCE 代碼驗證器和挑戰
     const { code_verifier, code_challenge } = generatePKCEPair();
 
     const bodyData = new URLSearchParams({
@@ -88,19 +88,16 @@ class CliAuthManager {
         Accept: "application/json",
       },
       body: bodyData,
+      signal: AbortSignal.timeout(10000),
     };
 
     applyProxyToFetchOptions(fetchOptions, account);
-    const ac = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 10000);
-    fetchOptions.signal = ac.signal;
 
     try {
       const response = await fetch(
         `${chatBaseUrl}/api/v1/oauth2/device/code`,
         fetchOptions,
       );
-      clearTimeout(tid);
 
       if (response.ok) {
         const result = await response.json();
@@ -111,7 +108,7 @@ class CliAuthManager {
         };
       } else {
         const responseBody = await this.readResponseBody(response);
-        logger.error("CLI裝置授權初始化失敗", "CLI", "", {
+        logger.error("CLI設備授權初始化失敗", "CLI", "", {
           status: response.status,
           statusText: response.statusText,
           body: responseBody,
@@ -119,7 +116,7 @@ class CliAuthManager {
         throw new Error("device_flow_failed");
       }
     } catch (error) {
-      logger.error("CLI裝置授權流程異常", "CLI", "", {
+      logger.error("CLI設備授權流程異常", "CLI", "", {
         url: `${chatBaseUrl}/api/v1/oauth2/device/code`,
         message: error.message,
       });
@@ -137,9 +134,9 @@ class CliAuthManager {
 
   /**
    * 授權登入
-   * @param {string} user_code - 使用者程式碼
+   * @param {string} user_code - 使用者代碼
    * @param {string} access_token - 訪問令牌
-   * @param {Object} [account] - Qwen 帳戶物件（用於解析帳號級代理）
+   * @param {Object} [account] - Qwen 賬戶物件（用於解析帳號級代理）
    * @returns {Promise<boolean>} 是否授權成功
    */
   async authorizeLogin(user_code, access_token, account) {
@@ -156,6 +153,7 @@ class CliAuthManager {
           approved: true,
           user_code: user_code,
         }),
+        signal: AbortSignal.timeout(10000),
       };
 
       applyProxyToFetchOptions(fetchOptions, account);
@@ -169,7 +167,7 @@ class CliAuthManager {
         return true;
       } else {
         const responseBody = await this.readResponseBody(response);
-        logger.error("CLI裝置授權確認失敗", "CLI", "", {
+        logger.error("CLI設備授權確認失敗", "CLI", "", {
           status: response.status,
           statusText: response.statusText,
           body: responseBody,
@@ -177,7 +175,7 @@ class CliAuthManager {
         throw new Error("authorize_failed");
       }
     } catch (error) {
-      logger.error("CLI裝置授權確認異常", "CLI", "", {
+      logger.error("CLI設備授權確認異常", "CLI", "", {
         url: `${chatBaseUrl}/api/v2/oauth2/authorize`,
         message: error.message,
       });
@@ -186,15 +184,15 @@ class CliAuthManager {
   }
 
   /**
-   * 輪詢獲取訪問令牌
-   * @param {string} device_code - 裝置程式碼
-   * @param {string} code_verifier - 程式碼驗證器
-   * @param {Object} [account] - Qwen 帳戶物件（用於解析帳號級代理）
+   * 輪詢取得訪問令牌
+   * @param {string} device_code - 設備代碼
+   * @param {string} code_verifier - 代碼驗證器
+   * @param {Object} [account] - Qwen 賬戶物件（用於解析帳號級代理）
    * @returns {Promise<Object>} 訪問令牌資訊
    */
   async pollForToken(device_code, code_verifier, account) {
-    let pollInterval = 5000;
-    const maxAttempts = 3;
+    const maxAttempts = 1;
+    const timeoutMs = 8000;
     const chatBaseUrl = getChatBaseUrl();
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -212,19 +210,16 @@ class CliAuthManager {
           Accept: "application/json",
         },
         body: bodyData,
+        signal: AbortSignal.timeout(timeoutMs),
       };
 
       applyProxyToFetchOptions(fetchOptions, account);
-      const ac3 = new AbortController();
-      const tid3 = setTimeout(() => ac3.abort(), 10000);
-      fetchOptions.signal = ac3.signal;
 
       try {
         const response = await fetch(
           `${chatBaseUrl}/api/v1/oauth2/token`,
           fetchOptions,
         );
-        clearTimeout(tid3);
 
         if (response.ok) {
           const tokenData = await response.json();
@@ -244,7 +239,7 @@ class CliAuthManager {
             !credentials.expiry_date
           ) {
             logger.error(
-              "CLI輪詢令牌成功但返回資料不完整",
+              "CLI輪詢令牌成功但回傳資料不完整",
               "CLI",
               "",
               tokenData,
@@ -255,16 +250,6 @@ class CliAuthManager {
         }
 
         const responseBody = await this.readResponseBody(response);
-        // 504 為上游閘道錯誤，重試無效，直接放棄
-        if (response.status === 504) {
-          logger.warn(`CLI輪詢令牌-上游504，放棄重試`, "CLI");
-          return {
-            status: false,
-            access_token: null,
-            refresh_token: null,
-            expiry_date: null,
-          };
-        }
         logger.warn(
           `CLI輪詢令牌未完成 (${attempt + 1}/${maxAttempts})`,
           "CLI",
@@ -275,12 +260,7 @@ class CliAuthManager {
             body: responseBody,
           },
         );
-
-        // 等待5秒, 然後繼續輪詢
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
       } catch (error) {
-        // 等待5秒, 然後繼續輪詢
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
         logger.error(
           `CLI輪詢令牌異常 (${attempt + 1}/${maxAttempts})`,
           "CLI",
@@ -290,7 +270,6 @@ class CliAuthManager {
             message: error.message,
           },
         );
-        continue;
       }
     }
 
@@ -303,15 +282,15 @@ class CliAuthManager {
   }
 
   /**
-   * 初始化 CLI 帳戶
+   * 初始化 CLI 賬戶
    * @param {string} access_token - 訪問令牌
-   * @param {Object} [account] - Qwen 帳戶物件（用於解析帳號級代理）
-   * @returns {Promise<Object>} 帳戶資訊
+   * @param {Object} [account] - Qwen 賬戶物件（用於解析帳號級代理）
+   * @returns {Promise<Object>} 賬戶資訊
    */
   async initCliAccount(access_token, account) {
     const deviceFlow = await this.initiateDeviceFlow(account);
     if (!deviceFlow.status) {
-      logger.error("CLI帳戶初始化失敗：裝置授權流程未成功啟動", "CLI");
+      logger.error("CLI賬戶初始化失敗：設備授權流程未成功啟動", "CLI");
       return {
         status: false,
         access_token: null,
@@ -323,7 +302,7 @@ class CliAuthManager {
     if (
       !(await this.authorizeLogin(deviceFlow.user_code, access_token, account))
     ) {
-      logger.error("CLI帳戶初始化失敗：裝置授權確認未通過", "CLI", "", {
+      logger.error("CLI賬戶初始化失敗：設備授權確認未通過", "CLI", "", {
         user_code: deviceFlow.user_code,
       });
       return {
@@ -345,7 +324,7 @@ class CliAuthManager {
       !cliToken.expiry_date
     ) {
       logger.error(
-        "CLI帳戶初始化失敗：輪詢令牌返回資料不完整",
+        "CLI賬戶初始化失敗：輪詢令牌回傳資料不完整",
         "CLI",
         "",
         cliToken,
@@ -356,9 +335,9 @@ class CliAuthManager {
 
   /**
    * 重新整理訪問令牌
-   * @param {Object} CliAccount - 帳戶資訊
-   * @param {Object} [account] - Qwen 帳戶物件（用於解析帳號級代理）
-   * @returns {Promise<Object>} 帳戶資訊
+   * @param {Object} CliAccount - 賬戶資訊
+   * @param {Object} [account] - Qwen 賬戶物件（用於解析帳號級代理）
+   * @returns {Promise<Object>} 賬戶資訊
    */
   async refreshAccessToken(CliAccount, account) {
     try {
@@ -381,6 +360,7 @@ class CliAuthManager {
           Accept: "application/json",
         },
         body: bodyData,
+        signal: AbortSignal.timeout(8000),
       };
 
       applyProxyToFetchOptions(fetchOptions, account);

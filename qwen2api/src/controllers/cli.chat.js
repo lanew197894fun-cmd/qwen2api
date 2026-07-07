@@ -1,6 +1,25 @@
 const axios = require('axios')
 const { logger } = require('../utils/logger')
+const accountManager = require('../utils/account')
 const { getProxyAgent, getCliBaseUrl, applyProxyToAxiosConfig } = require('../utils/proxy-helper')
+
+/**
+ * 靜默累計 CLI daily stats——異常不影響回應
+ * @param {string} email - 賬戶郵箱
+ * @param {Object} usage - upstream usage { prompt_tokens, completion_tokens }
+ */
+const attributeCliUsage = (email, usage) => {
+    if (!email) return
+    try {
+        accountManager.accumulateStats(email, 'cli', {
+            calls: 1,
+            input: Number(usage?.prompt_tokens) || 0,
+            output: Number(usage?.completion_tokens) || 0
+        })
+    } catch (e) {
+        // 靜默
+    }
+}
 
 const MODEL_REDIRECT = {
     'qwen3.5-plus': 'coder-model',
@@ -155,8 +174,8 @@ function ensureCliSystemMessage(messages) {
 }
 
 /**
- * 讀取流響應體為文本
- * @param {*} stream - 響應流
+ * 讀取流回應體為文本
+ * @param {*} stream - 回應流
  * @returns {Promise<string>} 文本結果
  */
 function readStreamBody(stream) {
@@ -179,7 +198,7 @@ function readStreamBody(stream) {
 
 /**
  * 嘗試解析 CLI 錯誤詳情
- * @param {*} data - 原始響應體
+ * @param {*} data - 原始回應體
  * @returns {Promise<*>} 可序列化的詳情
  */
 async function normalizeCliErrorDetails(data) {
@@ -257,9 +276,9 @@ function formatCliJsonResponse(data, fallbackModel) {
 }
 
 /**
- * 處理CLI聊天完成請求（支援OpenAI格式的流式和JSON響應）
+ * 處理CLI聊天完成請求（支援OpenAI格式的流式和JSON回應）
  * @param {Object} req - Express請求物件
- * @param {Object} res - Express響應物件
+ * @param {Object} res - Express回應物件
  */
 const handleCliChatCompletion = async (req, res) => {
     try {
@@ -267,7 +286,7 @@ const handleCliChatCompletion = async (req, res) => {
         const body = preprocessCliRequestBody(req.body)
         const isStream = body.stream === true
 
-        // 列印當前使用的帳號郵箱
+        // 列印目前使用的帳號郵箱
         logger.info(`CLI請求使用帳號[${req.account.email}]開始處理`, 'CLI', '🚀')
 
         // 無論成功失敗都增加請求計數
@@ -310,11 +329,11 @@ const handleCliChatCompletion = async (req, res) => {
             axiosConfig.proxy = false
         }
 
-        // 如果是流式請求，設定響應型別為流
+        // 如果是流式請求，設定回應類型為流
         if (isStream) {
             axiosConfig.responseType = 'stream'
 
-            // 設定響應頭為流式
+            // 設定回應頭為流式
             res.setHeader('Content-Type', 'text/event-stream')
             res.setHeader('Cache-Control', 'no-cache')
             res.setHeader('Connection', 'keep-alive')
@@ -324,15 +343,17 @@ const handleCliChatCompletion = async (req, res) => {
 
         const response = await axios(axiosConfig)
 
-        // 檢查響應狀態
+        // 檢查回應狀態
         if (response.status !== 200) {
             const errorDetails = await normalizeCliErrorDetails(response.data)
-            logger.error(`CLI請求使用帳號[${req.account.email}]轉發失敗 - 狀態碼: ${response.status} - 當前請求數: ${req.account.cli_info.request_number}`, 'CLI', '❌', {
+            logger.error(`CLI請求使用帳號[${req.account.email}]轉發失敗 - 狀態碼: ${response.status} - 目前請求數: ${req.account.cli_info.request_number}`, 'CLI', '❌', {
                 status: response.status,
                 statusText: response.statusText,
                 requestBody: body,
                 details: errorDetails
             })
+            // HTTP 4xx/5xx——僅重新整理 warn 指示, 不影響 cooldown（賬戶本身有效, 是上游主動拒絕）
+            accountManager.recordAccountError(req.account.email, response.status)
             return res.status(response.status).json({
                 error: {
                     message: `api_error`,
@@ -343,21 +364,45 @@ const handleCliChatCompletion = async (req, res) => {
             })
         }
 
-        // 處理流式響應
+        // 處理流式回應
         if (isStream) {
-            // 逐行轉發，確保始終輸出標準 SSE 片段
+            // 緩衝 SSE 解析——usage 幀可能跨 TCP 塊（僅 split('\n\n') 會丟失），
+            // 沿用 chat.js/anthropic.js 的 buffer + while indexOf('\n\n') 模式
+            let sseBuffer = ''
+            let cliUsage = null
+
             response.data.on('data', (chunk) => {
                 const text = chunk.toString('utf8')
+                // 透傳客戶端: 逐行回寫，保持原有行為
                 const lines = text.split('\n')
                 for (const line of lines) {
                     if (!line || !line.startsWith('data:')) continue
                     res.write(`${line}\n\n`)
                 }
+
+                // 解析 usage 幀（帶緩衝——幀可能被分塊切開）
+                sseBuffer += text
+                let idx
+                while ((idx = sseBuffer.indexOf('\n\n')) !== -1) {
+                    const frame = sseBuffer.slice(0, idx)
+                    sseBuffer = sseBuffer.slice(idx + 2)
+                    if (!frame.startsWith('data:')) continue
+                    const payload = frame.slice(frame.indexOf(':') + 1).trim()
+                    if (!payload || payload === '[DONE]') continue
+                    try {
+                        const parsed = JSON.parse(payload)
+                        if (parsed?.usage) cliUsage = parsed.usage
+                    } catch (e) {
+                        // 部分/非法 JSON——繼續累計
+                    }
+                }
             })
 
             // 處理流錯誤
             response.data.on('error', (streamError) => {
-                logger.error(`CLI請求使用帳號[${req.account.email}]流式傳輸失敗 - 當前請求數: ${req.account.cli_info.request_number}`, 'CLI', '❌')
+                logger.error(`CLI請求使用帳號[${req.account.email}]流式傳輸失敗 - 目前請求數: ${req.account.cli_info.request_number}`, 'CLI', '❌')
+                // 傳輸錯誤——記 failure（影響 cooldown）
+                accountManager.recordAccountFailure(req.account.email, streamError?.code)
                 if (!res.headersSent) {
                     res.status(500).json({
                         error: {
@@ -371,19 +416,28 @@ const handleCliChatCompletion = async (req, res) => {
 
             // 處理流結束
             response.data.on('end', () => {
-                logger.success(`CLI請求使用帳號[${req.account.email}]轉發成功 (流式) - 當前請求數: ${req.account.cli_info.request_number}`, 'CLI')
+                logger.success(`CLI請求使用帳號[${req.account.email}]轉發成功 (流式) - 目前請求數: ${req.account.cli_info.request_number}`, 'CLI')
+                attributeCliUsage(req.account.email, cliUsage)
                 res.end()
             })
         } else {
-            // 處理JSON響應
+            // 處理JSON回應
+            const cliUsage = response.data?.usage
             res.json(formatCliJsonResponse(response.data, body.model))
-            logger.success(`CLI請求使用帳號[${req.account.email}]轉發成功 (JSON) - 當前請求數: ${req.account.cli_info.request_number}`, 'CLI')
+            logger.success(`CLI請求使用帳號[${req.account.email}]轉發成功 (JSON) - 目前請求數: ${req.account.cli_info.request_number}`, 'CLI')
+            attributeCliUsage(req.account.email, cliUsage)
         }
     } catch (error) {
-        logger.error(`CLI請求使用帳號[${req.account.email}]處理異常 - 當前請求數: ${req.account.cli_info.request_number}`, 'CLI', '💥', {
+        logger.error(`CLI請求使用帳號[${req.account.email}]處理異常 - 目前請求數: ${req.account.cli_info.request_number}`, 'CLI', '💥', {
             requestBody: body,
             ...(await buildCliAxiosErrorLog(error))
         })
+        // catch 路徑——區分傳輸錯誤（cooldown）與 HTTP 錯誤（warn-only）
+        if (error?.response) {
+            accountManager.recordAccountError(req.account.email, error.response.status)
+        } else {
+            accountManager.recordAccountFailure(req.account.email, error?.code)
+        }
 
         // 如果是axios錯誤，提供更詳細的錯誤資訊
         if (error.response) {

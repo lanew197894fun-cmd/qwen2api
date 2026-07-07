@@ -1,6 +1,7 @@
 const { isJson, generateUUID } = require('../utils/tools.js');
 const { createUsageObject } = require('../utils/precise-tokenizer.js');
 const { sendChatRequest } = require('../utils/request.js');
+const accountManager = require('../utils/account.js');
 const { isChatType, isThinkingEnabled, parserModel, parserMessages } = require('../utils/chat-helpers.js');
 const {
   buildToolSystemPrompt,
@@ -9,14 +10,38 @@ const {
   createToolCallStreamParser
 } = require('../utils/tool-prompt.js');
 const { logger } = require('../utils/logger');
+const {
+  analyzeAnthropicCompatibility,
+  buildAnthropicCompatibilityHeaders
+} = require('./anthropic.compatibility.js');
 
 /**
- * Anthropic stop_reason 列舉
+ * 安全累計 chat stats（與 chat.js attributeChatUsage 共享語義）
+ * 靜默吞掉異常——stats 累計失敗不應中斷回應
+ * 同 epic notes: tool-retry 全歸屬主賬戶（精度損失可接受）
+ * @param {Object} account - 主請求賬戶物件
+ * @param {number} promptTokens - 輸入 tokens
+ * @param {number} completionTokens - 輸出 tokens
+ */
+const attributeChatUsage = (account, promptTokens, completionTokens) => {
+  if (!account || !account.email) return;
+  try {
+    accountManager.accumulateStats(account.email, 'chat', {
+      input: Number(promptTokens) || 0,
+      output: Number(completionTokens) || 0
+    });
+  } catch (e) {
+    // 靜默
+  }
+};
+
+/**
+ * Anthropic stop_reason 枚舉
  * @typedef {('end_turn'|'tool_use'|'max_tokens'|'stop_sequence')} AnthropicStopReason
  */
 
 /**
- * 將 Anthropic system 欄位規範為字串
+ * 將 Anthropic system 字段規範為字符串
  * @param {string|Array<Object>} system - Anthropic system
  * @returns {string} 合併後的 system 文本
  */
@@ -171,8 +196,8 @@ const buildInternalRequest = async (anthropicReq) => {
   let flat = flattenAnthropicMessages(messages);
   const systemText = normalizeAnthropicSystem(system);
 
-  // 2. system 文本拼到首條使用者訊息內容字首（不要作為獨立 system 訊息，
-  //    否則會被 parserMessages 摺疊為 "system:..." 文字字首汙染模型理解）
+  // 2. system 文本拼到首條使用者訊息內容前綴（不要作為獨立 system 訊息，
+  //    否則會被 parserMessages 摺疊為 "system:..." 文字前綴汙染模型理解）
   const hasTools = normalizedTools.length > 0;
   const toolPrompt = hasTools ? buildToolSystemPrompt(normalizedTools, { tool_choice: internalToolChoice }) : '';
 
@@ -187,7 +212,7 @@ const buildInternalRequest = async (anthropicReq) => {
   const parsedMessages = await parserMessages(flat, thinkingCfg, chatType);
   const parsedModel = await parserModel(model);
 
-  // 4. 合併 system 文本與工具提示詞到終端使用者訊息開頭
+  // 4. 合併 system 文本與工具提示詞到最終使用者訊息開頭
   const prefixParts = [systemText, toolPrompt].filter(Boolean);
   if (prefixParts.length > 0 && Array.isArray(parsedMessages) && parsedMessages.length > 0) {
     const prefix = prefixParts.join('\n\n');
@@ -245,9 +270,9 @@ const appendRetryHint = (body, hint) => ({
 });
 
 /**
- * 判斷 tool_choice 是否需要強制呼叫
+ * 判斷 tool_choice 是否需要強制調用
  * @param {string|Object} toolChoice - 內部 tool_choice
- * @returns {boolean} 是否要求至少一次工具呼叫
+ * @returns {boolean} 是否要求至少一次工具調用
  */
 const requiresToolCall = (toolChoice) => {
   if (toolChoice === 'required') return true;
@@ -256,7 +281,7 @@ const requiresToolCall = (toolChoice) => {
 };
 
 /**
- * 構建 required 重試提示
+ * 建置 required 重試提示
  * @param {string|Object} toolChoice - 內部 tool_choice
  * @returns {string} 提示文本
  */
@@ -268,9 +293,9 @@ const buildRetryHint = (toolChoice) => {
 };
 
 /**
- * 非同步迭代上游 axios 流，按 SSE 段切分回撥內部 delta JSON
- * @param {object} upstream - axios stream 響應
- * @param {(json: Object) => Promise<void>|void} onDelta - 單個 delta 回撥
+ * 非同步迭代上游 axios 流，按 SSE 段切分回調內部 delta JSON
+ * @param {object} upstream - axios stream 回應
+ * @param {(json: Object) => Promise<void>|void} onDelta - 單個 delta 回調
  * @returns {Promise<void>} 完成 Promise
  */
 const consumeUpstream = (upstream, onDelta) => new Promise((resolve, reject) => {
@@ -306,8 +331,8 @@ const consumeUpstream = (upstream, onDelta) => new Promise((resolve, reject) => 
 });
 
 /**
- * 把工具呼叫的 arguments JSON 字串切成 input_json_delta 切片
- * @param {string} argsJson - 完整 JSON 字串
+ * 把工具調用的 arguments JSON 字符串切成 input_json_delta 切片
+ * @param {string} argsJson - 完整 JSON 字符串
  * @param {number} chunkSize - 單片大小
  * @returns {Array<string>} 切片列表
  */
@@ -321,7 +346,7 @@ const sliceArgsJson = (argsJson, chunkSize = 32) => {
 
 /**
  * 寫入一個 Anthropic SSE 事件
- * @param {object} res - Express 響應
+ * @param {object} res - Express 回應
  * @param {string} event - 事件名
  * @param {Object} data - 事件 payload
  */
@@ -330,10 +355,10 @@ const writeAnthropicEvent = (res, event, data) => {
 };
 
 /**
- * 處理流式 Anthropic 響應
- * @param {object} res - Express 響應
+ * 處理流式 Anthropic 回應
+ * @param {object} res - Express 回應
  * @param {Object} ctx - 處理上下文
- * @param {object} upstream - 上游 axios 響應
+ * @param {object} upstream - 上游 axios 回應
  * @param {string} ctx.message_id - 訊息 ID
  * @param {string} ctx.model - 模型名
  * @param {boolean} ctx.hasTools - 是否啟用工具
@@ -367,13 +392,14 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
 
   let blockIndex = -1;
   let textBlockOpen = false;
+  let thinkingBlockOpen = false;
   let promptTokens = 0;
   let completionTokens = 0;
 
   const parser = hasTools ? createToolCallStreamParser() : null;
 
   /**
-   * 關閉當前開啟的文本塊
+   * 關閉目前打開的文本塊
    */
   const closeTextBlockIfOpen = () => {
     if (textBlockOpen) {
@@ -383,12 +409,46 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
   };
 
   /**
-   * 輸出一段文本增量；按需開啟新文本塊
+   * 關閉目前打開的思維塊
+   */
+  const closeThinkingBlockIfOpen = () => {
+    if (thinkingBlockOpen) {
+      writeAnthropicEvent(res, 'content_block_stop', { type: 'content_block_stop', index: blockIndex });
+      thinkingBlockOpen = false;
+    }
+  };
+
+  /**
+   * 輸出一段思維增量；按需打開新思維塊
+   * @param {string} thinking - 思維增量
+   */
+  const emitThinkingDelta = (thinking) => {
+    if (!thinking) return;
+    if (!thinkingBlockOpen) {
+      closeTextBlockIfOpen();
+      blockIndex += 1;
+      writeAnthropicEvent(res, 'content_block_start', {
+        type: 'content_block_start',
+        index: blockIndex,
+        content_block: { type: 'thinking', thinking: '' }
+      });
+      thinkingBlockOpen = true;
+    }
+    writeAnthropicEvent(res, 'content_block_delta', {
+      type: 'content_block_delta',
+      index: blockIndex,
+      delta: { type: 'thinking_delta', thinking }
+    });
+  };
+
+  /**
+   * 輸出一段文本增量；按需打開新文本塊
    * @param {string} text - 文本增量
    */
   const emitTextDelta = (text) => {
     if (!text) return;
     if (!textBlockOpen) {
+      closeThinkingBlockIfOpen();
       blockIndex += 1;
       writeAnthropicEvent(res, 'content_block_start', {
         type: 'content_block_start',
@@ -406,9 +466,10 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
 
   /**
    * 輸出一個完整的 tool_use 塊（按 input_json_delta 切片）
-   * @param {Object} call - 工具呼叫
+   * @param {Object} call - 工具調用
    */
   const emitToolUse = (call) => {
+    closeThinkingBlockIfOpen();
     closeTextBlockIfOpen();
     blockIndex += 1;
     writeAnthropicEvent(res, 'content_block_start', {
@@ -430,7 +491,6 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
   let completionContent = '';
   let webSearchInfo = null;
   let thinkingStarted = false;
-  let thinkingEnded = false;
 
   /**
    * 處理一個上游 delta JSON
@@ -451,21 +511,26 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
     let content = delta.content;
     completionContent += content;
 
-    if (delta.phase === 'think' && !thinkingStarted) {
-      thinkingStarted = true;
-      content = `<think>\n\n${content}`;
-    }
-    if (delta.phase === 'answer' && !thinkingEnded && thinkingStarted) {
-      thinkingEnded = true;
-      content = `\n\n</think>\n${content}`;
-    }
-
-    if (parser && delta.phase === 'answer') {
-      const parsed = parser.push(content);
-      if (parsed.textDelta) emitTextDelta(parsed.textDelta);
-      for (const call of parsed.completedCalls) emitToolUse(call);
-    } else {
-      emitTextDelta(content);
+    if (delta.phase === 'think') {
+      if (!thinkingStarted) {
+        thinkingStarted = true;
+        if (webSearchInfo) {
+          const config = require('../config/index.js');
+          try {
+            const searchTable = await accountManager.generateMarkdownTable(webSearchInfo, config.searchInfoMode);
+            emitThinkingDelta(searchTable + '\n\n');
+          } catch (_) {}
+        }
+      }
+      emitThinkingDelta(content);
+    } else if (delta.phase === 'answer') {
+      if (parser) {
+        const parsed = parser.push(content);
+        if (parsed.textDelta) emitTextDelta(parsed.textDelta);
+        for (const call of parsed.completedCalls) emitToolUse(call);
+      } else {
+        emitTextDelta(content);
+      }
     }
   };
 
@@ -491,6 +556,7 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
     for (const call of tail.completedCalls) emitToolUse(call);
   }
 
+  closeThinkingBlockIfOpen();
   closeTextBlockIfOpen();
 
   const stopReason = (parser && parser.hasEmittedAnyCall()) ? 'tool_use' : 'end_turn';
@@ -500,6 +566,9 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
     promptTokens = usage.prompt_tokens || 0;
     completionTokens = usage.completion_tokens || 0;
   }
+
+  // Daily stats 累計——一次性歸屬主賬戶（見模塊頂部 attributeChatUsage 註釋）
+  attributeChatUsage(ctx.currentAccount, promptTokens, completionTokens);
 
   writeAnthropicEvent(res, 'message_delta', {
     type: 'message_delta',
@@ -511,23 +580,23 @@ const handleAnthropicStream = async (res, ctx, upstream) => {
 };
 
 /**
- * 處理非流式 Anthropic 響應
- * @param {object} res - Express 響應
+ * 處理非流式 Anthropic 回應
+ * @param {object} res - Express 回應
  * @param {Object} ctx - 處理上下文
- * @param {object} upstream - 上游 axios 響應
+ * @param {object} upstream - 上游 axios 回應
  * @returns {Promise<void>} 完成 Promise
  */
 const handleAnthropicNonStream = async (res, ctx, upstream) => {
   const { message_id, model, hasTools, toolChoice, requestBody } = ctx;
 
-  let fullContent = '';
+  let thinkingContent = '';
+  let answerContent = '';
   let promptTokens = 0;
   let completionTokens = 0;
-  let thinkingStarted = false;
-  let thinkingEnded = false;
+  let webSearchInfo = null;
 
   /**
-   * 處理一個上游 delta JSON 並累積 fullContent
+   * 處理一個上游 delta JSON
    * @param {Object} json - 上游 SSE delta
    */
   const onUpstreamDelta = async (json) => {
@@ -537,24 +606,35 @@ const handleAnthropicNonStream = async (res, ctx, upstream) => {
       completionTokens = json.usage.completion_tokens || completionTokens;
     }
     const delta = json.choices[0].delta;
+    if (delta && delta.name === 'web_search') {
+      webSearchInfo = delta.extra?.web_search_info;
+    }
     if (!delta || !delta.content || (delta.phase !== 'think' && delta.phase !== 'answer')) return;
-    let content = delta.content;
-    if (delta.phase === 'think' && !thinkingStarted) {
-      thinkingStarted = true;
-      content = `<think>\n\n${content}`;
+    const content = delta.content;
+    if (delta.phase === 'think') {
+      thinkingContent += content;
+    } else if (delta.phase === 'answer') {
+      answerContent += content;
     }
-    if (delta.phase === 'answer' && !thinkingEnded && thinkingStarted) {
-      thinkingEnded = true;
-      content = `\n\n</think>\n${content}`;
-    }
-    fullContent += content;
   };
 
   await consumeUpstream(upstream, onUpstreamDelta);
 
+  if (webSearchInfo) {
+    const config = require('../config/index.js');
+    try {
+      const searchTable = await accountManager.generateMarkdownTable(webSearchInfo, config.searchInfoMode);
+      if (thinkingContent) {
+        thinkingContent = searchTable + '\n\n' + thinkingContent;
+      } else {
+        answerContent = searchTable + '\n\n' + answerContent;
+      }
+    } catch (_) {}
+  }
+
   let { cleanedText, toolCalls } = hasTools
-    ? parseToolCallsFromText(fullContent)
-    : { cleanedText: fullContent, toolCalls: [] };
+    ? parseToolCallsFromText(answerContent)
+    : { cleanedText: answerContent, toolCalls: [] };
 
   // required 重試
   if (hasTools && toolCalls.length === 0 && requiresToolCall(toolChoice)) {
@@ -562,13 +642,13 @@ const handleAnthropicNonStream = async (res, ctx, upstream) => {
     try {
       const retryResp = await sendChatRequest(appendRetryHint(requestBody, buildRetryHint(toolChoice)));
       if (retryResp.status && retryResp.response) {
-        const before = fullContent;
+        const before = answerContent;
         await consumeUpstream(retryResp.response, onUpstreamDelta);
-        const retried = fullContent.slice(before.length);
+        const retried = answerContent.slice(before.length);
         const parsedRetry = parseToolCallsFromText(retried);
         if (parsedRetry.toolCalls.length > 0) {
           toolCalls = parsedRetry.toolCalls;
-          cleanedText = parseToolCallsFromText(fullContent).cleanedText;
+          cleanedText = parseToolCallsFromText(answerContent).cleanedText;
         }
       }
     } catch (e) {
@@ -577,12 +657,15 @@ const handleAnthropicNonStream = async (res, ctx, upstream) => {
   }
 
   if (promptTokens === 0 && completionTokens === 0) {
-    const usage = createUsageObject(requestBody?.messages || '', fullContent, null);
+    const usage = createUsageObject(requestBody?.messages || '', thinkingContent + answerContent, null);
     promptTokens = usage.prompt_tokens || 0;
     completionTokens = usage.completion_tokens || 0;
   }
 
   const contentBlocks = [];
+  if (thinkingContent && thinkingContent.trim()) {
+    contentBlocks.push({ type: 'thinking', thinking: thinkingContent });
+  }
   if (cleanedText && cleanedText.trim()) {
     contentBlocks.push({ type: 'text', text: cleanedText });
   }
@@ -596,6 +679,9 @@ const handleAnthropicNonStream = async (res, ctx, upstream) => {
       input
     });
   }
+
+  // Daily stats 累計——一次性歸屬主賬戶（同 stream 分支註釋）
+  attributeChatUsage(ctx.currentAccount, promptTokens, completionTokens);
 
   res.set({ 'Content-Type': 'application/json' });
   res.json({
@@ -613,10 +699,20 @@ const handleAnthropicNonStream = async (res, ctx, upstream) => {
 /**
  * Anthropic /v1/messages 主入口
  * @param {object} req - Express 請求
- * @param {object} res - Express 響應
+ * @param {object} res - Express 回應
  */
 const handleAnthropicMessages = async (req, res) => {
   try {
+    const compatibility = analyzeAnthropicCompatibility(req.body || {});
+    const compatibilityHeaders = buildAnthropicCompatibilityHeaders(compatibility);
+    if (Object.keys(compatibilityHeaders).length > 0) {
+      res.set(compatibilityHeaders);
+      logger.warn(
+        `Anthropic compatibility notice: ${compatibility.summary}`,
+        'ANTHROPIC'
+      );
+    }
+
     const built = await buildInternalRequest(req.body || {});
     const { body, hasTools, toolChoice, model } = built;
 
@@ -624,12 +720,12 @@ const handleAnthropicMessages = async (req, res) => {
     if (!upstreamResp.status || !upstreamResp.response) {
       return res.status(500).json({
         type: 'error',
-        error: { type: 'api_error', message: '請求傳送失敗' }
+        error: { type: 'api_error', message: 'Request failed' }
       });
     }
 
     const message_id = `msg_${generateUUID().replace(/-/g, '').slice(0, 24)}`;
-    const ctx = { message_id, model, hasTools, toolChoice, requestBody: body };
+    const ctx = { message_id, model, hasTools, toolChoice, requestBody: body, currentAccount: upstreamResp.currentAccount };
 
     if (req.body?.stream) {
       await handleAnthropicStream(res, ctx, upstreamResp.response);
@@ -641,7 +737,7 @@ const handleAnthropicMessages = async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({
         type: 'error',
-        error: { type: 'api_error', message: '服務錯誤' }
+        error: { type: 'api_error', message: 'Service error' }
       });
     } else {
       try { res.end(); } catch (_) { /* ignore */ }
@@ -651,6 +747,8 @@ const handleAnthropicMessages = async (req, res) => {
 
 module.exports = {
   handleAnthropicMessages,
+  analyzeAnthropicCompatibility,
+  buildAnthropicCompatibilityHeaders,
   // 暴露內部輔助以便測試
   flattenAnthropicMessages,
   normalizeAnthropicTools,

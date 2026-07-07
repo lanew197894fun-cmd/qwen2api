@@ -14,8 +14,8 @@ const DATA_URI_REGEX = /^data:(.+);base64,(.*)$/i
 const HTTP_URL_REGEX = /^https?:\/\//i
 
 /**
- * 構造與當前帳號一致的上游 Cookie 頭
- * @param {string} token - 當前帳號令牌
+ * 構造與目前帳號一致的上游 Cookie 頭
+ * @param {string} token - 目前帳號令牌
  * @returns {string} Cookie 頭
  */
 const buildUpstreamCookieHeader = (token) => {
@@ -40,8 +40,8 @@ const buildUpstreamCookieHeader = (token) => {
 }
 
 /**
- * 將上游響應體格式化為便於日誌輸出的物件
- * @param {*} payload - 原始響應體
+ * 將上游回應體格式化為便於日誌輸出的物件
+ * @param {*} payload - 原始回應體
  * @returns {*} 可序列化的日誌物件
  */
 const formatPayloadForLog = (payload) => {
@@ -103,7 +103,7 @@ const parseUpstreamImageError = (data) => {
             payload = JSON.parse(payload)
         }
 
-        // 只有明確 success=false 且帶錯誤碼時，才按上游錯誤包處理，避免誤傷正常業務響應
+        // 只有明確 success=false 且帶錯誤碼時，才按上游錯誤包處理，避免誤傷正常業務回應
         if (!payload || payload.success !== false || !payload.data?.code) {
             return null
         }
@@ -111,12 +111,12 @@ const parseUpstreamImageError = (data) => {
         const errorData = payload.data
         if (errorData.code === 'RateLimited') {
             const waitHours = errorData.num
-            logger.error(`圖片/影片生成額度已用盡，需等待約 ${waitHours || '未知'} 小時`, 'CHAT', '', {
+            logger.error(`圖片/視頻產生額度已用盡，需等待約 ${waitHours || '未知'} 小時`, 'CHAT', '', {
                 parsed_error: errorData,
                 raw_response_body: rawPayload
             })
             return {
-                error: `當前帳號的該功能使用次數已達上限，${waitHours ? `請等待約 ${waitHours} 小時後再試` : '請稍後再試'}`,
+                error: `目前帳號的該功能使用次數已達上限，${waitHours ? `請等待約 ${waitHours} 小時後再試` : '請稍後再試'}`,
                 code: errorData.code,
                 wait_hours: waitHours,
                 status: 429
@@ -128,7 +128,7 @@ const parseUpstreamImageError = (data) => {
             raw_response_body: rawPayload
         })
         return {
-            error: errorData.details || errorData.code || '服務錯誤，請稍後再試',
+            error: errorData.details || errorData.code || 'Service error, please try again later',
             code: errorData.code,
             request_id: payload.request_id,
             status: errorData.code === 'Bad_Request' && /internal error/i.test(errorData.details || '') ? 502 : 500
@@ -144,7 +144,7 @@ const parseUpstreamImageErrorFromText = (text) => {
             return null
         }
 
-        // 圖片介面在額度耗盡時可能返回普通 JSON 文本而不是 SSE，需要在流結束後補做一次識別
+        // 圖片接口在額度耗盡時可能回傳普通 JSON 文本而不是 SSE，需要在流結束後補做一次識別
         return parseUpstreamImageError(JSON.parse(text))
     } catch (e) {
         return null
@@ -234,9 +234,9 @@ const extractResourceUrlFromText = (text) => {
 }
 
 /**
- * 從文本中提取影片任務 ID
+ * 從文本中提取視頻任務 ID
  * @param {string} text - 文本內容
- * @returns {string|null} 影片任務 ID
+ * @returns {string|null} 視頻任務 ID
  */
 const extractVideoTaskIDFromText = (text) => {
     if (!text || typeof text !== 'string') {
@@ -262,9 +262,9 @@ const extractVideoTaskIDFromText = (text) => {
 }
 
 /**
- * 從文本中提取響應 ID
+ * 從文本中提取回應 ID
  * @param {string} text - 文本內容
- * @returns {string[]} 響應 ID 列表
+ * @returns {string[]} 回應 ID 列表
  */
 const extractResponseIDsFromText = (text) => {
     if (!text || typeof text !== 'string') {
@@ -291,8 +291,8 @@ const extractResponseIDsFromText = (text) => {
 }
 
 /**
- * 從上游響應中提取資源連結
- * @param {*} payload - 上游響應負載
+ * 從上游回應中提取資源連結
+ * @param {*} payload - 上游回應負載
  * @returns {string|null} 資源連結
  */
 const extractResourceUrlFromPayload = (payload) => {
@@ -391,9 +391,9 @@ const extractResourceUrlFromPayload = (payload) => {
 }
 
 /**
- * 從上游響應中提取響應 ID
- * @param {*} payload - 上游響應負載
- * @returns {string[]} 響應 ID 列表
+ * 從上游回應中提取回應 ID
+ * @param {*} payload - 上游回應負載
+ * @returns {string[]} 回應 ID 列表
  */
 const extractResponseIDsFromPayload = (payload) => {
     if (!payload) {
@@ -446,9 +446,9 @@ const extractResponseIDsFromPayload = (payload) => {
 }
 
 /**
- * 從上游響應中提取影片任務 ID
- * @param {*} payload - 上游響應負載
- * @returns {string|null} 影片任務 ID
+ * 從上游回應中提取視頻任務 ID
+ * @param {*} payload - 上游回應負載
+ * @returns {string|null} 視頻任務 ID
  */
 const extractVideoTaskIdentifiersFromPayload = (payload) => {
     if (!payload) {
@@ -538,14 +538,14 @@ const extractVideoTaskIdentifiersFromPayload = (payload) => {
 }
 
 /**
- * 從上游響應中提取首個影片任務 ID
- * @param {*} payload - 上游響應負載
- * @returns {string|null} 影片任務 ID
+ * 從上游回應中提取首個視頻任務 ID
+ * @param {*} payload - 上游回應負載
+ * @returns {string|null} 視頻任務 ID
  */
 const extractVideoTaskIDFromPayload = (payload) => extractVideoTaskIdentifiersFromPayload(payload)[0] || null
 
 /**
- * 判斷是否屬於可重試的上游生成錯誤
+ * 判斷是否屬於可重試的上游產生錯誤
  * @param {object|null} upstreamError - 上游錯誤
  * @returns {boolean} 是否可重試
  */
@@ -558,10 +558,10 @@ const isRetryableUpstreamError = (upstreamError) => {
 }
 
 /**
- * 向下遊傳送上游錯誤
- * @param {object} res - Express 響應物件
+ * 向下遊發送上游錯誤
+ * @param {object} res - Express 回應物件
  * @param {object} upstreamError - 上游錯誤
- * @returns {*} 響應結果
+ * @returns {*} 回應結果
  */
 const sendUpstreamError = (res, upstreamError) => {
     const { status, ...payload } = upstreamError
@@ -576,14 +576,14 @@ const sendUpstreamError = (res, upstreamError) => {
 const buildImageContent = (contentUrl) => `![image](${contentUrl})`
 
 /**
- * 構造影片訊息內容
- * @param {string} contentUrl - 影片連結
- * @returns {string} 影片訊息內容
+ * 構造視頻訊息內容
+ * @param {string} contentUrl - 視頻連結
+ * @returns {string} 視頻訊息內容
  */
 const buildVideoContent = (contentUrl) => `\n<video controls="controls">\n${contentUrl}\n</video>\n\n[Download Video](${contentUrl})\n`
 
 /**
- * 解析可能為 JSON 字串的請求欄位
+ * 解析可能為 JSON 字符串的請求字段
  * @param {*} value - 原始值
  * @returns {*} 解析後的值
  */
@@ -620,7 +620,7 @@ const ensureArray = (value) => {
 }
 
 /**
- * 規範化 OpenAI 風格尺寸引數
+ * 規範化 OpenAI 風格尺寸參數
  * @param {string} size - 原始尺寸
  * @returns {string|undefined} 規範化後的尺寸
  */
@@ -641,14 +641,14 @@ const normalizeOpenAIImageVideoSize = (size) => {
 }
 
 /**
- * 統一構造 OpenAI 風格錯誤響應
- * @param {object} res - Express 響應物件
+ * 統一構造 OpenAI 風格錯誤回應
+ * @param {object} res - Express 回應物件
  * @param {*} error - 錯誤物件
- * @returns {*} 響應結果
+ * @returns {*} 回應結果
  */
 const sendOpenAIErrorResponse = (res, error) => {
     const status = error?.status || 500
-    const message = error?.error || error?.message || '服務錯誤，請稍後再試'
+    const message = error?.error || error?.message || 'Service error, please try again later'
 
     return res.status(status).json({
         error: {
@@ -680,10 +680,10 @@ const downloadAssetAsBase64 = async (contentUrl, account) => {
 }
 
 /**
- * 構造 OpenAI 影像響應項
+ * 構造 OpenAI 圖像回應項
  * @param {string} contentUrl - 圖片連結
  * @param {string} responseFormat - 輸出格式
- * @returns {Promise<object>} 影像響應項
+ * @returns {Promise<object>} 圖像回應項
  */
 const buildOpenAIImageResultItem = async (contentUrl, responseFormat) => {
     if (responseFormat === 'b64_json') {
@@ -700,7 +700,7 @@ const buildOpenAIImageResultItem = async (contentUrl, responseFormat) => {
 /**
  * 從請求物件中提取內聯媒體連結
  * @param {*} value - 原始媒體值
- * @param {string} mediaType - 媒體型別
+ * @param {string} mediaType - 媒體類型
  * @returns {string|null} 媒體連結
  */
 const extractInlineMediaURL = (value, mediaType) => {
@@ -723,7 +723,7 @@ const extractInlineMediaURL = (value, mediaType) => {
 
 /**
  * 構造內部媒體內容項
- * @param {string} mediaType - 媒體型別
+ * @param {string} mediaType - 媒體類型
  * @param {string} mediaURL - 媒體連結
  * @returns {object} 內部媒體內容項
  */
@@ -744,7 +744,7 @@ const buildInternalMediaItem = (mediaType, mediaURL) => {
 /**
  * 上傳 multipart 檔案並構造內部媒體內容項
  * @param {object} file - multer 檔案物件
- * @param {string} mediaType - 媒體型別
+ * @param {string} mediaType - 媒體類型
  * @returns {Promise<object>} 內部媒體內容項
  */
 const uploadMultipartMediaFile = async (file, mediaType) => {
@@ -765,9 +765,9 @@ const uploadMultipartMediaFile = async (file, mediaType) => {
 }
 
 /**
- * 將內聯媒體引數轉換為內部媒體內容項
+ * 將內聯媒體參數轉換為內部媒體內容項
  * @param {*} value - 原始媒體值
- * @param {string} mediaType - 媒體型別
+ * @param {string} mediaType - 媒體類型
  * @returns {Promise<object|null>} 內部媒體內容項
  */
 const normalizeInlineMediaItem = async (value, mediaType) => {
@@ -801,8 +801,8 @@ const normalizeInlineMediaItem = async (value, mediaType) => {
 /**
  * 收集請求中的媒體內容項
  * @param {object} req - Express 請求物件
- * @param {string} fieldName - 欄位名
- * @param {string} mediaType - 媒體型別
+ * @param {string} fieldName - 字段名
+ * @param {string} mediaType - 媒體類型
  * @returns {Promise<Array<object>>} 媒體內容項列表
  */
 const collectRequestMediaItems = async (req, fieldName, mediaType) => {
@@ -826,8 +826,8 @@ const collectRequestMediaItems = async (req, fieldName, mediaType) => {
 /**
  * 解析請求模型，未顯式傳入時按能力選擇預設模型
  * @param {string} model - 請求模型
- * @param {string} chatType - 聊天型別
- * @returns {Promise<string>} 可直接傳送到上游的模型 ID
+ * @param {string} chatType - 聊天類型
+ * @returns {Promise<string>} 可直接發送到上游的模型 ID
  */
 const resolveRequestedModel = async (model, chatType) => {
     if (model) {
@@ -839,8 +839,8 @@ const resolveRequestedModel = async (model, chatType) => {
 }
 
 /**
- * 讀取影片上游流並提取任務資訊
- * @param {*} responseStream - 上游響應流
+ * 讀取視頻上游流並提取任務資訊
+ * @param {*} responseStream - 上游回應流
  * @returns {Promise<{ upstreamError: object|null, contentUrl: string|null, videoTaskID: string|null, videoTaskCandidates: string[], responseIDs: string[], rawPreview: string }>} 解析結果
  */
 const readVideoUpstreamResult = async (responseStream) => {
@@ -940,8 +940,8 @@ const readVideoUpstreamResult = async (responseStream) => {
 }
 
 /**
- * 讀取圖片上游流並提取響應資訊
- * @param {*} responseStream - 上游響應流
+ * 讀取圖片上游流並提取回應資訊
+ * @param {*} responseStream - 上游回應流
  * @returns {Promise<{ upstreamError: object|null, contentUrl: string|null, responseIDs: string[], rawPreview: string }>} 解析結果
  */
 const readImageUpstreamResult = async (responseStream) => {
@@ -1033,7 +1033,7 @@ const readImageUpstreamResult = async (responseStream) => {
 const getChatDetail = async (chatID, token) => {
     try {
         const chatBaseUrl = getChatBaseUrl()
-        // 通過 token 反查 account 解析帳號級代理（找不到則回退到全域性 PROXY_URL）
+        // 通過 token 反查 account 解析帳號級代理（找不到則回退到全域 PROXY_URL）
         const account = accountManager.getAccountByToken(token)
         const proxyAgent = getProxyAgent(account)
         const cookieHeader = buildUpstreamCookieHeader(token)
@@ -1055,7 +1055,7 @@ const getChatDetail = async (chatID, token) => {
         const responseData = await axios.get(`${chatBaseUrl}/api/v2/chats/${chatID}`, requestConfig)
         return responseData.data || null
     } catch (error) {
-        logger.error(`獲取聊天詳情失敗 (${chatID})`, 'CHAT', '', buildAxiosErrorLog(error))
+        logger.error(`取得聊天詳情失敗 (${chatID})`, 'CHAT', '', buildAxiosErrorLog(error))
         return null
     }
 }
@@ -1063,7 +1063,7 @@ const getChatDetail = async (chatID, token) => {
 /**
  * 從聊天詳情中提取資源與任務資訊
  * @param {*} chatDetail - 聊天詳情
- * @param {string[]} responseIDs - 響應 ID 列表
+ * @param {string[]} responseIDs - 回應 ID 列表
  * @returns {{ contentUrl: string|null, videoTaskCandidates: string[] }} 提取結果
  */
 const extractVideoInfoFromChatDetail = (chatDetail, responseIDs = []) => {
@@ -1119,10 +1119,10 @@ const extractVideoInfoFromChatDetail = (chatDetail, responseIDs = []) => {
 }
 
 /**
- * 解析圖片生成結果連結
- * @param {*} responseData - 上游響應
+ * 解析圖片產生結果連結
+ * @param {*} responseData - 上游回應
  * @param {string} chatID - 會話 ID
- * @param {string} token - 當前帳號令牌
+ * @param {string} token - 目前帳號令牌
  * @returns {Promise<string>} 圖片連結
  */
 const resolveImageResultContentUrl = async (responseData, chatID, token) => {
@@ -1134,7 +1134,7 @@ const resolveImageResultContentUrl = async (responseData, chatID, token) => {
     let contentUrl = upstreamContentUrl
 
     if (!contentUrl && chatID) {
-        logger.info(`圖片上游未直接返回連結，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
+        logger.info(`圖片上游未直接回傳連結，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
 
         for (let attempt = 1; attempt <= 5; attempt++) {
             const chatDetail = await getChatDetail(chatID, token)
@@ -1149,19 +1149,19 @@ const resolveImageResultContentUrl = async (responseData, chatID, token) => {
     }
 
     if (!contentUrl) {
-        logger.warn(`圖片上游響應未解析出圖片連結，responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
-        throw new Error('上游未返回圖片連結')
+        logger.warn(`圖片上游回應未解析出圖片連結，responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
+        throw new Error('上游未回傳圖片連結')
     }
 
     return contentUrl
 }
 
 /**
- * 解析影片生成結果連結
- * @param {*} responseStream - 上游響應流
- * @param {string} token - 當前帳號令牌
+ * 解析視頻產生結果連結
+ * @param {*} responseStream - 上游回應流
+ * @param {string} token - 目前帳號令牌
  * @param {string} chatID - 會話 ID
- * @returns {Promise<string>} 影片連結
+ * @returns {Promise<string>} 視頻連結
  */
 const resolveVideoResultContentUrl = async (responseStream, token, chatID) => {
     const { upstreamError, contentUrl: upstreamContentUrl, videoTaskCandidates, responseIDs, rawPreview } = await readVideoUpstreamResult(responseStream)
@@ -1177,7 +1177,7 @@ const resolveVideoResultContentUrl = async (responseStream, token, chatID) => {
     let resolvedTaskCandidates = [...videoTaskCandidates]
 
     if (!resolvedContentUrl && resolvedTaskCandidates.length === 0 && chatID) {
-        logger.info(`影片上游未直接返回任務資訊，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
+        logger.info(`視頻上游未直接回傳任務資訊，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
 
         for (let attempt = 1; attempt <= 5; attempt++) {
             const chatDetail = await getChatDetail(chatID, token)
@@ -1206,17 +1206,17 @@ const resolveVideoResultContentUrl = async (responseStream, token, chatID) => {
     }
 
     if (resolvedTaskCandidates.length === 0) {
-        logger.warn(`影片上游響應未解析出任務資訊，contentUrl=${resolvedContentUrl || '空'} candidates=${JSON.stringify(resolvedTaskCandidates)} responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
-        throw new Error('上游未返回影片任務 ID 或影片連結')
+        logger.warn(`視頻上游回應未解析出任務資訊，contentUrl=${resolvedContentUrl || '空'} candidates=${JSON.stringify(resolvedTaskCandidates)} responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
+        throw new Error('上游未回傳視頻任務 ID 或視頻連結')
     }
 
-    logger.info(`影片任務候選ID: ${JSON.stringify(resolvedTaskCandidates)}`, 'CHAT')
+    logger.info(`視頻任務候選ID: ${JSON.stringify(resolvedTaskCandidates)}`, 'CHAT')
 
     const maxAttempts = 60
     const delay = 20 * 1000
 
     for (const taskCandidate of resolvedTaskCandidates) {
-        logger.info(`開始輪詢影片任務ID: ${taskCandidate}`, 'CHAT')
+        logger.info(`開始輪詢視頻任務ID: ${taskCandidate}`, 'CHAT')
 
         for (let i = 0; i < maxAttempts; i++) {
             const content = await getVideoTaskStatus(taskCandidate, token)
@@ -1228,21 +1228,21 @@ const resolveVideoResultContentUrl = async (responseStream, token, chatID) => {
         }
     }
 
-    logger.error(`影片任務 ${JSON.stringify(resolvedTaskCandidates)} 輪詢超時`, 'CHAT')
+    logger.error(`視頻任務 ${JSON.stringify(resolvedTaskCandidates)} 輪詢逾時`, 'CHAT')
     throw {
         status: 504,
-        error: '影片生成超時，請稍後再試'
+        error: '視頻產生逾時，請稍後再試'
     }
 }
 
 /**
- * 統一執行圖片/影片請求
+ * 統一執行圖片/視頻請求
  * @param {object} payload - 內部請求體
  * @returns {Promise<{ model: string, chatType: string, contentUrl: string, content: string }>} 執行結果
  */
 const generateImageVideoResult = async (payload) => {
     const { model, messages, size, chat_type } = payload
-    // 一次取出帳戶物件，確保 token 與 proxy 走同一個帳號
+    // 一次取出賬戶物件，確保 token 與 proxy 走同一個帳號
     const account = accountManager.getAccount()
     const token = account ? account.token : null
 
@@ -1269,7 +1269,7 @@ const generateImageVideoResult = async (payload) => {
         const chatID = await generateChatID(token, model)
 
         if (!chatID) {
-            throw new Error('生成 chat_id 失敗')
+            throw new Error('產生 chat_id 失敗')
         }
 
         reqBody.chat_id = chatID
@@ -1364,36 +1364,35 @@ const generateImageVideoResult = async (payload) => {
         const proxyAgent = getProxyAgent(account)
         const cookieHeader = buildUpstreamCookieHeader(token)
 
-        logger.info('傳送圖片影片請求', 'CHAT')
-        logger.info(`選擇圖片: ${selectedImageList[selectedImageList.length - 1] || '未選擇圖片，切換生成圖/影片模式'}`, 'CHAT')
+        logger.info('發送圖片視頻請求', 'CHAT')
+        logger.info(`選擇圖片: ${selectedImageList[selectedImageList.length - 1] || '未選擇圖片，切換產生圖/視頻模式'}`, 'CHAT')
         logger.info(`使用提示: ${reqBody.messages[0].content}`, 'CHAT')
 
         const newChatType = reqBody.messages[0].chat_type
         const upstreamStream = newChatType === 't2i' || newChatType === 'image_edit'
         reqBody.stream = upstreamStream
 
-        logger.info(`圖片影片流策略: upstream=${upstreamStream} downstream=${payload.stream === true}`, 'CHAT')
+        logger.info(`圖片視頻流策略: upstream=${upstreamStream} downstream=${payload.stream === true}`, 'CHAT')
 
         const requestConfig = {
             headers: {
-                'Authorization': `Bearer ${token}`,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-                "Connection": "keep-alive",
-                "Accept": upstreamStream ? "text/event-stream" : "application/json",
-                "Accept-Encoding": "gzip, deflate, br, zstd",
-                "Content-Type": "application/json",
-                "Timezone": "Mon Dec 08 2025 17:28:55 GMT+0800",
-                "sec-ch-ua": "\"Microsoft Edge\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
-                "source": "web",
-                "Version": "0.1.13",
-                "bx-v": "2.5.31",
-                "Origin": chatBaseUrl,
-                "Sec-Fetch-Site": "same-origin",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Dest": "empty",
-                "Referer": `${chatBaseUrl}/c/guest`,
-                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-                ...(cookieHeader && { "Cookie": cookieHeader }),
+                'authorization': `Bearer ${token}`,
+                'sec-ch-ua-platform': '"Windows"',
+                'referer': `${chatBaseUrl}/`,
+                'accept-language': 'zh-CN,zh;q=0.9',
+                'sec-ch-ua': '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+                'sec-ch-ua-mobile': '?0',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+                'content-type': 'application/json',
+                'bx-v': '2.5.36',
+                'accept': upstreamStream ? 'application/json, text/plain, */*' : 'application/json',
+                'accept-encoding': 'gzip, deflate, br, zstd',
+                ...(cookieHeader && { 'cookie': cookieHeader }),
+                'host': chatBaseUrl.replace('https://', ''),
+                'origin': chatBaseUrl,
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin',
             },
             responseType: newChatType === 't2v' ? 'json' : (upstreamStream ? 'stream' : 'text'),
             timeout: 1000 * 60 * 5
@@ -1413,17 +1412,17 @@ const generateImageVideoResult = async (payload) => {
 
                 const inlineUpstreamError = parseUpstreamImageError(responseData.data)
                 if (attempt < maxUpstreamAttempts && isRetryableUpstreamError(inlineUpstreamError)) {
-                    logger.warn(`圖片/影片請求上游返回業務錯誤包，準備第 ${attempt + 1} 次重試，請求ID: ${inlineUpstreamError.request_id || '未知'}`, 'CHAT')
+                    logger.warn(`圖片/視頻請求上游回傳業務錯誤包，準備第 ${attempt + 1} 次重試，請求ID: ${inlineUpstreamError.request_id || '未知'}`, 'CHAT')
                     await sleep(800)
                     continue
                 }
 
                 break
             } catch (error) {
-                logger.error('圖片/影片請求失敗', 'CHAT', '', buildAxiosErrorLog(error))
+                logger.error('圖片/視頻請求失敗', 'CHAT', '', buildAxiosErrorLog(error))
                 const upstreamError = parseUpstreamImageError(error.response?.data)
                 if (attempt < maxUpstreamAttempts && isRetryableUpstreamError(upstreamError)) {
-                    logger.warn(`圖片/影片請求上游返回瞬時內部錯誤，準備第 ${attempt + 1} 次重試`, 'CHAT')
+                    logger.warn(`圖片/視頻請求上游回傳瞬時內部錯誤，準備第 ${attempt + 1} 次重試`, 'CHAT')
                     await sleep(800)
                     continue
                 }
@@ -1452,9 +1451,9 @@ const generateImageVideoResult = async (payload) => {
             }
         }
 
-        throw new Error('不支援的圖片/影片型別')
+        throw new Error('不支援的圖片/視頻類型')
     } catch (error) {
-        logger.error('圖片/影片主流程異常', 'CHAT', '', buildAxiosErrorLog(error))
+        logger.error('圖片/視頻主流程異常', 'CHAT', '', buildAxiosErrorLog(error))
 
         if (error?.error) {
             throw error
@@ -1467,7 +1466,7 @@ const generateImageVideoResult = async (payload) => {
 
         throw {
             status: 500,
-            error: error?.message || '服務錯誤，請稍後再試'
+            error: error?.message || 'Service error, please try again later'
         }
     }
 }
@@ -1475,7 +1474,7 @@ const generateImageVideoResult = async (payload) => {
 /**
  * 主要的聊天完成處理函式
  * @param {object} req - Express 請求物件
- * @param {object} res - Express 響應物件
+ * @param {object} res - Express 回應物件
  */
 const handleImageVideoCompletion = async (req, res) => {
     const downstreamStream = req.body.stream === true
@@ -1503,21 +1502,21 @@ const handleImageVideoCompletion = async (req, res) => {
             clearInterval(keepAliveTimer)
         }
 
-        logger.error('圖片影片資源處理錯誤', 'CHAT', '', error)
+        logger.error('圖片視頻資源處理錯誤', 'CHAT', '', error)
 
         if (downstreamStream) {
-            return returnResponse(res, req.body.model, error?.error || error?.message || '服務錯誤，請稍後再試', true)
+            return returnResponse(res, req.body.model, error?.error || error?.message || 'Service error, please try again later', true)
         }
 
         return sendUpstreamError(res, error?.error ? error : {
             status: 500,
-            error: error?.message || '服務錯誤，請稍後再試'
+            error: error?.message || 'Service error, please try again later'
         })
     }
 }
 
 /**
- * 返回響應
+ * 回傳回應
  * @param {*} res
  * @param {string} model
  * @param {string} content
@@ -1528,7 +1527,7 @@ const returnResponse = (res, model, content, stream) => {
         setResponseHeaders(res, stream)
     }
 
-    logger.info(`返回響應: ${content}`, 'CHAT')
+    logger.info(`回傳回應: ${content}`, 'CHAT')
 
     if (stream) {
         const responseID = `chatcmpl-${new Date().getTime()}`
@@ -1588,9 +1587,9 @@ const returnResponse = (res, model, content, stream) => {
 }
 
 /**
- * 處理 OpenAI 風格的圖片生成端點
+ * 處理 OpenAI 風格的圖片產生端點
  * @param {object} req - Express 請求物件
- * @param {object} res - Express 響應物件
+ * @param {object} res - Express 回應物件
  * @returns {Promise<void>}
  */
 const handleOpenAIImagesGeneration = async (req, res) => {
@@ -1598,7 +1597,7 @@ const handleOpenAIImagesGeneration = async (req, res) => {
         if (!req.body?.prompt) {
             return sendOpenAIErrorResponse(res, {
                 status: 400,
-                error: 'prompt 是必填引數'
+                error: 'prompt 是必填參數'
             })
         }
 
@@ -1623,7 +1622,7 @@ const handleOpenAIImagesGeneration = async (req, res) => {
             data: [imageData]
         })
     } catch (error) {
-        logger.error('OpenAI 圖片生成端點處理失敗', 'CHAT', '', error)
+        logger.error('OpenAI 圖片產生端點處理失敗', 'CHAT', '', error)
         return sendOpenAIErrorResponse(res, error)
     }
 }
@@ -1631,7 +1630,7 @@ const handleOpenAIImagesGeneration = async (req, res) => {
 /**
  * 處理 OpenAI 風格的圖片編輯端點
  * @param {object} req - Express 請求物件
- * @param {object} res - Express 響應物件
+ * @param {object} res - Express 回應物件
  * @returns {Promise<void>}
  */
 const handleOpenAIImagesEdit = async (req, res) => {
@@ -1640,7 +1639,7 @@ const handleOpenAIImagesEdit = async (req, res) => {
         if (imageItems.length === 0) {
             return sendOpenAIErrorResponse(res, {
                 status: 400,
-                error: 'image 是必填引數'
+                error: 'image 是必填參數'
             })
         }
 
@@ -1678,9 +1677,9 @@ const handleOpenAIImagesEdit = async (req, res) => {
 }
 
 /**
- * 處理 OpenAI 風格的影片生成端點
+ * 處理 OpenAI 風格的視頻產生端點
  * @param {object} req - Express 請求物件
- * @param {object} res - Express 響應物件
+ * @param {object} res - Express 回應物件
  * @returns {Promise<void>}
  */
 const handleOpenAIVideoGeneration = async (req, res) => {
@@ -1688,7 +1687,7 @@ const handleOpenAIVideoGeneration = async (req, res) => {
         if (!req.body?.prompt) {
             return sendOpenAIErrorResponse(res, {
                 status: 400,
-                error: 'prompt 是必填引數'
+                error: 'prompt 是必填參數'
             })
         }
 
@@ -1719,7 +1718,7 @@ const handleOpenAIVideoGeneration = async (req, res) => {
             ]
         })
     } catch (error) {
-        logger.error('OpenAI 影片生成端點處理失敗', 'CHAT', '', error)
+        logger.error('OpenAI 視頻產生端點處理失敗', 'CHAT', '', error)
         return sendOpenAIErrorResponse(res, error)
     }
 }
@@ -1745,7 +1744,7 @@ const handleVideoCompletion = async (res, responseStream, token, model, downstre
 
             if (downstreamStream) {
                 res.status(upstreamError.status || 500)
-                return returnResponse(res, model, upstreamError.error || '影片生成失敗', true)
+                return returnResponse(res, model, upstreamError.error || '視頻產生失敗', true)
             }
 
             return sendUpstreamError(res, upstreamError)
@@ -1763,7 +1762,7 @@ const handleVideoCompletion = async (res, responseStream, token, model, downstre
         let resolvedTaskCandidates = [...videoTaskCandidates]
 
         if (!resolvedContentUrl && resolvedTaskCandidates.length === 0 && chatID) {
-            logger.info(`影片上游未直接返回任務資訊，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
+            logger.info(`視頻上游未直接回傳任務資訊，嘗試從聊天詳情補取，chat_id=${chatID} responseIDs=${JSON.stringify(responseIDs)}`, 'CHAT')
 
             for (let attempt = 1; attempt <= 5; attempt++) {
                 const chatDetail = await getChatDetail(chatID, token)
@@ -1796,17 +1795,17 @@ const handleVideoCompletion = async (res, responseStream, token, model, downstre
         }
 
         if (resolvedTaskCandidates.length === 0) {
-            logger.warn(`影片上游響應未解析出任務資訊，contentUrl=${resolvedContentUrl || '空'} candidates=${JSON.stringify(resolvedTaskCandidates)} responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
-            throw new Error('上游未返回影片任務 ID 或影片連結')
+            logger.warn(`視頻上游回應未解析出任務資訊，contentUrl=${resolvedContentUrl || '空'} candidates=${JSON.stringify(resolvedTaskCandidates)} responseIDs=${JSON.stringify(responseIDs)} preview=${rawPreview}`, 'CHAT')
+            throw new Error('上游未回傳視頻任務 ID 或視頻連結')
         }
 
-        logger.info(`影片任務候選ID: ${JSON.stringify(resolvedTaskCandidates)}`, 'CHAT')
+        logger.info(`視頻任務候選ID: ${JSON.stringify(resolvedTaskCandidates)}`, 'CHAT')
 
         const maxAttempts = 60
         const delay = 20 * 1000
 
         for (const taskCandidate of resolvedTaskCandidates) {
-            logger.info(`開始輪詢影片任務ID: ${taskCandidate}`, 'CHAT')
+            logger.info(`開始輪詢視頻任務ID: ${taskCandidate}`, 'CHAT')
 
             for (let i = 0; i < maxAttempts; i++) {
                 const content = await getVideoTaskStatus(taskCandidate, token)
@@ -1822,27 +1821,27 @@ const handleVideoCompletion = async (res, responseStream, token, model, downstre
             }
         }
 
-        logger.error(`影片任務 ${JSON.stringify(resolvedTaskCandidates)} 輪詢超時`, 'CHAT')
+        logger.error(`視頻任務 ${JSON.stringify(resolvedTaskCandidates)} 輪詢逾時`, 'CHAT')
         if (keepAliveTimer) {
             clearInterval(keepAliveTimer)
         }
 
         if (downstreamStream) {
-            return returnResponse(res, model, '影片生成超時，請稍後再試', true)
+            return returnResponse(res, model, '視頻產生逾時，請稍後再試', true)
         }
 
-        return res.status(504).json({ error: '影片生成超時，請稍後再試' })
+        return res.status(504).json({ error: '視頻產生逾時，請稍後再試' })
     } catch (error) {
         if (keepAliveTimer) {
             clearInterval(keepAliveTimer)
         }
 
-        logger.error('獲取影片任務狀態失敗', 'CHAT', '', error)
+        logger.error('取得視頻任務狀態失敗', 'CHAT', '', error)
 
-        const errorMessage = error.response?.data?.data?.code || error.message || '可能該帳號今日生成次數已用完'
+        const errorMessage = error.response?.data?.data?.code || error.message || '可能該帳號今日產生次數已用完'
 
         if (downstreamStream) {
-            return returnResponse(res, model, `影片生成失敗: ${errorMessage}`, true)
+            return returnResponse(res, model, `視頻產生失敗: ${errorMessage}`, true)
         }
 
         res.status(500).json({ error: errorMessage })
@@ -1875,13 +1874,13 @@ const getVideoTaskStatus = async (videoTaskID, token) => {
 
         if (response_data.data?.task_status == "success") {
             const contentUrl = extractResourceUrlFromPayload(response_data.data)
-            logger.info('獲取影片任務狀態成功', 'CHAT', contentUrl || response_data.data?.content)
+            logger.info('取得視頻任務狀態成功', 'CHAT', contentUrl || response_data.data?.content)
             return contentUrl
         }
-        logger.info(`獲取影片任務 ${videoTaskID} 狀態: ${response_data.data?.task_status}`, 'CHAT')
+        logger.info(`取得視頻任務 ${videoTaskID} 狀態: ${response_data.data?.task_status}`, 'CHAT')
         return null
     } catch (error) {
-        logger.error(`查詢影片任務狀態失敗 (${videoTaskID})`, 'CHAT', '', buildAxiosErrorLog(error))
+        logger.error(`查詢視頻任務狀態失敗 (${videoTaskID})`, 'CHAT', '', buildAxiosErrorLog(error))
         return null
     }
 }

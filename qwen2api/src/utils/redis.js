@@ -28,7 +28,7 @@ let connectionPromise = null
 let lastActivity = 0
 let idleTimer = null
 
-// 空閒超時時間 (5分鐘)
+// 空閒逾時時間 (5分鐘)
 const IDLE_TIMEOUT = 5 * 60 * 1000
 // 長時間空閒後在下一次使用前主動重建連線，避免複用已被服務端回收的空閒連線
 const STALE_CONNECTION_THRESHOLD = 45 * 1000
@@ -41,7 +41,7 @@ const REDIS_VERIFY_RETRY_DELAY = 500
 const isTLS = config.redisURL && (config.redisURL.startsWith('rediss://') || config.redisURL.includes('--tls'))
 
 /**
- * 建立Redis連線配置
+ * 創建Redis連線配置
  */
 const createRedisConfig = () => ({
   ...REDIS_CONFIG,
@@ -73,7 +73,7 @@ const createRedisConfig = () => ({
 
 /**
  * 驗證 Redis 命令通道是否可用
- * @param {object} client - Redis 客戶端例項
+ * @param {object} client - Redis 客戶端實例
  * @returns {Promise<void>} 驗證結果
  */
 const verifyRedisCommandChannel = async (client) => {
@@ -83,11 +83,11 @@ const verifyRedisCommandChannel = async (client) => {
     try {
       const pong = await client.ping()
       if (pong !== 'PONG') {
-        throw new Error(`PING 返回異常: ${pong}`)
+        throw new Error(`PING 回傳異常: ${pong}`)
       }
 
       if (attempt > 1) {
-        logger.info(`Redis命令通道在第 ${attempt} 次校驗時恢復正常`, 'REDIS', '✅')
+        logger.info(`Redis命令通道在第 ${attempt} 次校驗時還原正常`, 'REDIS', '✅')
       }
 
       return
@@ -117,8 +117,8 @@ const clearIdleTimer = () => {
 }
 
 /**
- * 等待現有 Redis 客戶端恢復為可用狀態
- * @param {object} client - Redis 客戶端例項
+ * 等待現有 Redis 客戶端還原為可用狀態
+ * @param {object} client - Redis 客戶端實例
  * @returns {Promise<object>} 可用的 Redis 客戶端
  */
 const waitForRedisReady = (client) => new Promise((resolve, reject) => {
@@ -134,7 +134,7 @@ const waitForRedisReady = (client) => new Promise((resolve, reject) => {
 
   const timeout = setTimeout(() => {
     cleanup()
-    reject(new Error('等待Redis連線恢復超時'))
+    reject(new Error('等待Redis連線還原逾時'))
   }, REDIS_CONFIG.connectTimeout + REDIS_CONFIG.commandTimeout)
 
   const cleanup = () => {
@@ -175,15 +175,15 @@ const updateActivity = () => {
   // 設定新的空閒定時器
   idleTimer = setTimeout(() => {
     if (redis && Date.now() - lastActivity > IDLE_TIMEOUT) {
-      logger.info('Redis連線空閒超時，斷開連線', 'REDIS', '🔌')
+      logger.info('Redis連線空閒逾時，斷開連線', 'REDIS', '🔌')
       disconnectRedis()
     }
   }, IDLE_TIMEOUT)
 }
 
 /**
- * 繫結 Redis 事件
- * @param {object} client - Redis 客戶端例項
+ * 綁定 Redis 事件
+ * @param {object} client - Redis 客戶端實例
  */
 const bindRedisEvents = (client) => {
   client.on('connect', () => {
@@ -320,8 +320,8 @@ const disconnectRedis = async () => {
  */
 const ensureConnection = async () => {
   if (config.dataSaveMode !== 'redis') {
-    logger.error('當前資料儲存模式不是Redis', 'REDIS')
-    throw new Error('當前資料儲存模式不是Redis')
+    logger.error('目前資料保存模式不是Redis', 'REDIS')
+    throw new Error('目前資料保存模式不是Redis')
   }
 
   if (!redis || redis.status !== 'ready') {
@@ -339,8 +339,8 @@ const ensureConnection = async () => {
 }
 
 /**
- * 獲取所有帳戶
- * @returns {Promise<Array>} 所有帳戶資訊陣列
+ * 取得所有賬戶
+ * @returns {Promise<Array>} 所有賬戶資訊陣列
  */
 const getAllAccounts = async () => {
   try {
@@ -357,11 +357,11 @@ const getAllAccounts = async () => {
     } while (cursor !== '0')
 
     if (!keys.length) {
-      logger.info('沒有找到任何帳戶', 'REDIS', '✅')
+      logger.info('沒有找到任何賬戶', 'REDIS', '✅')
       return []
     }
 
-    // 使用pipeline一次性獲取所有帳戶資料
+    // 使用pipeline一次性取得所有賬戶資料
     const pipeline = client.pipeline()
     keys.forEach(key => {
       pipeline.hgetall(key)
@@ -369,7 +369,7 @@ const getAllAccounts = async () => {
 
     const results = await pipeline.exec()
     if (!results) {
-      logger.error('獲取帳戶資料失敗', 'REDIS')
+      logger.error('取得賬戶資料失敗', 'REDIS')
       return []
     }
 
@@ -377,58 +377,91 @@ const getAllAccounts = async () => {
       // result格式為[err, value]
       const [err, accountData] = result
       if (err) {
-        logger.error(`獲取帳戶 ${keys[index]} 資料失敗`, 'REDIS', '', err)
+        logger.error(`取得賬戶 ${keys[index]} 資料失敗`, 'REDIS', '', err)
         return null
       }
       if (!accountData || Object.keys(accountData).length === 0) {
-        logger.error(`帳戶 ${keys[index]} 資料為空`, 'REDIS')
+        logger.error(`賬戶 ${keys[index]} 資料為空`, 'REDIS')
         return null
+      }
+      // stats 以 JSON 字符串存儲於 HSET——malformed/missing 回傳 undefined，由上層 ensureStats 補預設
+      let stats
+      if (accountData.stats) {
+        try {
+          stats = JSON.parse(accountData.stats)
+        } catch (parseError) {
+          logger.warn(`賬戶 ${keys[index]} stats JSON 解析失敗，使用預設值: ${parseError.message}`, 'REDIS')
+          stats = undefined
+        }
+      }
+      // statsHistory is stored as a JSON string in HSET; malformed/missing → undefined, ensureStats fills {} upstream
+      let statsHistory
+      if (accountData.statsHistory) {
+        try {
+          statsHistory = JSON.parse(accountData.statsHistory)
+        } catch (parseError) {
+          logger.warn(`賬戶 ${keys[index]} statsHistory JSON 解析失敗，使用預設值: ${parseError.message}`, 'REDIS')
+          statsHistory = undefined
+        }
       }
       return {
         email: keys[index].replace('user:', ''),
         password: accountData.password || '',
         token: accountData.token || '',
         expires: accountData.expires || '',
-        proxy: accountData.proxy || null
+        proxy: accountData.proxy || null,
+        stats,
+        statsHistory
       }
     }).filter(Boolean) // 過濾掉null值
 
-    logger.success(`獲取所有帳戶成功，共 ${accounts.length} 個帳戶`, 'REDIS')
+    logger.success(`取得所有賬戶成功，共 ${accounts.length} 個賬戶`, 'REDIS')
     return accounts
   } catch (err) {
-    logger.error('獲取帳戶時出錯', 'REDIS', '', err)
+    logger.error('取得賬戶時出錯', 'REDIS', '', err)
     throw err
   }
 }
 
 /**
- * 設定帳戶
+ * 設定賬戶
  * @param {string} key - 鍵名（郵箱）
- * @param {Object} value - 帳戶資訊
+ * @param {Object} value - 賬戶資訊
  * @returns {Promise<boolean>} 設定是否成功
  */
 const setAccount = async (key, value) => {
   try {
     const client = await ensureConnection()
 
-    const { password, token, expires, proxy } = value
-    await client.hset(`user:${key}`, {
-      password: password || '',
-      token: token || '',
-      expires: expires || '',
-      proxy: proxy || ''
-    })
+    const { password, token, expires, proxy, stats, statsHistory } = value
 
-    logger.success(`帳戶 ${key} 設定成功`, 'REDIS')
+    // 僅寫入顯式傳入的字段——HSET 不影響其他字段，保留 MERGE 語義
+    // 這樣 partial save（token refresh / proxy update）不會清零 daily stats
+    const payload = {}
+    if (password !== undefined) payload.password = password || ''
+    if (token !== undefined) payload.token = token || ''
+    if (expires !== undefined) payload.expires = expires || ''
+    if (proxy !== undefined) payload.proxy = proxy || ''
+    if (stats !== undefined) payload.stats = JSON.stringify(stats)
+    if (statsHistory !== undefined) payload.statsHistory = JSON.stringify(statsHistory)
+
+    if (Object.keys(payload).length === 0) {
+      logger.warn(`賬戶 ${key} setAccount 收到空 payload，跳過寫入`, 'REDIS')
+      return true
+    }
+
+    await client.hset(`user:${key}`, payload)
+
+    logger.success(`賬戶 ${key} 設定成功`, 'REDIS')
     return true
   } catch (err) {
-    logger.error(`設定帳戶 ${key} 失敗`, 'REDIS', '', err)
+    logger.error(`設定賬戶 ${key} 失敗`, 'REDIS', '', err)
     return false
   }
 }
 
 /**
- * 刪除帳戶
+ * 刪除賬戶
  * @param {string} key - 鍵名（郵箱）
  * @returns {Promise<boolean>} 刪除是否成功
  */
@@ -438,14 +471,50 @@ const deleteAccount = async (key) => {
 
     const result = await client.del(`user:${key}`)
     if (result > 0) {
-      logger.success(`帳戶 ${key} 刪除成功`, 'REDIS')
+      logger.success(`賬戶 ${key} 刪除成功`, 'REDIS')
       return true
     } else {
-      logger.warn(`帳戶 ${key} 不存在`, 'REDIS')
+      logger.warn(`賬戶 ${key} 不存在`, 'REDIS')
       return false
     }
   } catch (err) {
-    logger.error(`刪除帳戶 ${key} 失敗`, 'REDIS', '', err)
+    logger.error(`刪除賬戶 ${key} 失敗`, 'REDIS', '', err)
+    return false
+  }
+}
+
+const SETTINGS_KEY = 'qwen2api:settings'
+
+/**
+ * 取得執行時設定
+ * @returns {Promise<Object>} 設定物件 (字段類型為 string，調用方需自行 parseInt)
+ */
+const getSettings = async () => {
+  try {
+    const client = await ensureConnection()
+    const data = await client.hgetall(SETTINGS_KEY)
+    return JSON.parse(data.json)
+  } catch (err) {
+    logger.error('取得執行時設定失敗', 'REDIS', '', err)
+    return {}
+  }
+}
+
+/**
+ * 保存執行時設定（通過 hset 部分合併）
+ * @param {Object} partial - 字段
+ * @returns {Promise<boolean>} 設定是否成功
+ */
+const setSettings = async (partial) => {
+  try {
+    const client = await ensureConnection()
+    const stringified = {
+      json: JSON.stringify(partial)
+    }
+    await client.hset(SETTINGS_KEY, stringified)
+    return true
+  } catch (err) {
+    logger.error('保存執行時設定失敗', 'REDIS', '', err)
     return false
   }
 }
@@ -471,7 +540,7 @@ const checkKeyExists = async (key = 'headers') => {
 }
 
 /**
- * 獲取連線狀態
+ * 取得連線狀態
  * @returns {Object} 連線狀態資訊
  */
 const getConnectionStatus = () => {
@@ -492,12 +561,14 @@ const cleanup = async () => {
   await disconnectRedis()
 }
 
-// 建立相容的Redis客戶端物件
+// 創建相容的Redis客戶端物件
 const redisClient = {
   getAllAccounts,
   setAccount,
   deleteAccount,
   checkKeyExists,
+  getSettings,
+  setSettings,
   getConnectionStatus,
   cleanup,
 
@@ -543,7 +614,7 @@ const redisClient = {
   }
 }
 
-// 程式退出時清理連線
+// 進程退出時清理連線
 process.on('exit', cleanup)
 process.on('SIGINT', cleanup)
 process.on('SIGTERM', cleanup)

@@ -1,4 +1,4 @@
-const config = require('../config')
+const config = require("../config");
 
 /**
  * 驗證API Key是否有效
@@ -7,55 +7,76 @@ const config = require('../config')
  */
 const validateApiKey = (providedKey) => {
   if (!providedKey) {
-    return { isValid: false, isAdmin: false }
+    return { isValid: false, isAdmin: false };
   }
 
-  // 移除Bearer字首
-  const cleanKey = providedKey.startsWith('Bearer ') ? providedKey.slice(7) : providedKey
+  // 移除Bearer前綴
+  const cleanKey = providedKey.startsWith("Bearer ")
+    ? providedKey.slice(7)
+    : providedKey;
 
   // 檢查是否在有效的API keys列表中
-  const isValid = config.apiKeys.includes(cleanKey)
-  const isAdmin = cleanKey === config.adminKey
+  const isValid = config.apiKeys.includes(cleanKey);
+  const isAdmin = cleanKey === config.adminKey;
 
-  return { isValid, isAdmin }
-}
+  return { isValid, isAdmin };
+};
 
 /**
- * API Key驗證中介軟體 - 驗證任何有效的API Key
+ * API Key驗證中間件 - 驗證任何有效的API Key
+ * 當 config.authDisabled 為 true 時跳過驗證
  */
 const apiKeyVerify = (req, res, next) => {
-  const apiKey = req.headers['authorization'] || req.headers['Authorization'] || req.headers['x-api-key']
-  const { isValid, isAdmin } = validateApiKey(apiKey)
+  if (config.authDisabled) {
+    req.isAdmin = true;
+    req.apiKey = config.adminKey || "bypass";
+    return next();
+  }
+
+  const apiKey =
+    req.headers["authorization"] ||
+    req.headers["Authorization"] ||
+    req.headers["x-api-key"];
+  const { isValid, isAdmin } = validateApiKey(apiKey);
 
   if (!isValid) {
-    return res.status(401).json({ error: 'Unauthorized' })
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // 將許可權資訊附加到請求物件
-  req.isAdmin = isAdmin
-  req.apiKey = apiKey
-  next()
-}
+  // 將權限資訊附加到請求物件
+  req.isAdmin = isAdmin;
+  req.apiKey = apiKey;
+  next();
+};
 
 /**
- * 管理員許可權驗證中介軟體 - 只允許管理員API Key
+ * 管理員權限驗證中間件 - 只允許管理員API Key
+ * 當 config.authDisabled 為 true 時跳過驗證
  */
 const adminKeyVerify = (req, res, next) => {
-  const apiKey = req.headers['authorization'] || req.headers['Authorization'] || req.headers['x-api-key']
-  const { isValid, isAdmin } = validateApiKey(apiKey)
-
-  if (!isValid || !isAdmin) {
-    return res.status(403).json({ error: 'Admin access required' })
+  if (config.authDisabled) {
+    req.isAdmin = true;
+    req.apiKey = config.adminKey || "bypass";
+    return next();
   }
 
-  req.isAdmin = isAdmin
-  req.apiKey = apiKey
-  next()
-}
+  const apiKey =
+    req.headers["authorization"] ||
+    req.headers["Authorization"] ||
+    req.headers["x-api-key"];
+  const { isValid, isAdmin } = validateApiKey(apiKey);
+
+  if (!isValid || !isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+
+  req.isAdmin = isAdmin;
+  req.apiKey = apiKey;
+  next();
+};
 
 module.exports = {
   apiKeyVerify,
   adminKeyVerify,
-  validateApiKey
-}
-
+  validateApiKey,
+};

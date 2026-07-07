@@ -2,21 +2,21 @@ const { generateUUID } = require('./tools.js');
 const { logger } = require('./logger');
 
 /**
- * 工具呼叫 XML 起始標籤
+ * 工具調用 XML 起始標籤
  * @type {string}
  */
 const TOOL_CALL_OPEN = '<tool_call>';
 
 /**
- * 工具呼叫 XML 結束標籤
+ * 工具調用 XML 結束標籤
  * @type {string}
  */
 const TOOL_CALL_CLOSE = '</tool_call>';
 
 /**
- * 將 JSON Schema 型別壓縮為簡短 TypeScript 風格簽名
+ * 將 JSON Schema 類型壓縮為簡短 TypeScript 風格簽名
  * @param {Object} schema - JSON Schema 節點
- * @returns {string} TS 風格型別表示
+ * @returns {string} TS 風格類型表示
  */
 const compressSchemaType = (schema) => {
   if (!schema || typeof schema !== 'object') {
@@ -72,11 +72,11 @@ const compressToolDefinition = (tool) => {
 };
 
 /**
- * 構建用於注入 system 訊息的工具呼叫提示詞
+ * 建置用於注入 system 訊息的工具調用提示詞
  * @param {Array<Object>} tools - OpenAI 風格工具定義列表
- * @param {Object} [options] - 可選引數
- * @param {string|Object} [options.tool_choice] - OpenAI tool_choice 引數
- * @returns {string} 完整的工具呼叫系統提示詞
+ * @param {Object} [options] - 可選參數
+ * @param {string|Object} [options.tool_choice] - OpenAI tool_choice 參數
+ * @returns {string} 完整的工具調用系統提示詞
  */
 const buildToolSystemPrompt = (tools, options = {}) => {
   if (!Array.isArray(tools) || tools.length === 0) {
@@ -132,7 +132,7 @@ const buildToolSystemPrompt = (tools, options = {}) => {
 
 /**
  * 將歷史中的 assistant tool_calls / tool 角色訊息摺疊成純文本，
- * 以便上游網頁介面（僅識別 user/assistant/system）能正確接收上下文。
+ * 以便上游網頁接口（僅識別 user/assistant/system）能正確接收上下文。
  * 摺疊時保留原始 tool_call_id，並將後續 role=tool 訊息按 id 精確回鏈。
  * @param {Array<Object>} messages - 原始 OpenAI 風格訊息陣列
  * @returns {Array<Object>} 摺疊後的訊息陣列
@@ -152,7 +152,7 @@ const foldToolMessages = (messages) => {
           try {
             args = JSON.parse(args);
           } catch (_) {
-            // 保留原始字串形式
+            // 保留原始字符串形式
           }
         }
         const name = call?.function?.name || 'unknown';
@@ -186,9 +186,9 @@ const foldToolMessages = (messages) => {
 };
 
 /**
- * 轉義 XML 屬性中的特殊字元
- * @param {string} value - 原始字串
- * @returns {string} 轉義後的字串
+ * 轉義 XML 屬性中的特殊字符
+ * @param {string} value - 原始字符串
+ * @returns {string} 轉義後的字符串
  */
 const escapeAttr = (value) => String(value || '')
   .replace(/&/g, '&amp;')
@@ -198,7 +198,7 @@ const escapeAttr = (value) => String(value || '')
 
 /**
  * 解析單段 `<tool_call>...</tool_call>` 內的 JSON 負載
- * @param {string} raw - 標籤內的原始字串
+ * @param {string} raw - 標籤內的原始字符串
  * @returns {{ name: string, arguments: Object }|null} 解析結果
  */
 const parseToolCallPayload = (raw) => {
@@ -224,7 +224,7 @@ const parseToolCallPayload = (raw) => {
 };
 
 /**
- * 從完整文本中提取所有工具呼叫塊
+ * 從完整文本中提取所有工具調用塊
  * @param {string} fullText - 模型完整輸出
  * @returns {{ cleanedText: string, toolCalls: Array<Object> }} 抽取結果
  */
@@ -254,15 +254,15 @@ const parseToolCallsFromText = (fullText) => {
 };
 
 /**
- * 建立增量式工具呼叫流解析器
+ * 創建增量式工具調用流解析器
  * 接收 content delta，識別 `<tool_call>` 塊邊界，
- * 對外吐出文本增量與已完成的工具呼叫物件。
+ * 對外吐出文本增量與已完成的工具調用物件。
  * @returns {{
  *   push: (chunk: string) => { textDelta: string, completedCalls: Array<Object> },
  *   flush: () => { textDelta: string, completedCalls: Array<Object> },
  *   hasPendingCall: () => boolean,
  *   hasEmittedAnyCall: () => boolean
- * }} 解析器例項
+ * }} 解析器實例
  */
 const createToolCallStreamParser = () => {
   let pendingText = '';
@@ -271,8 +271,8 @@ const createToolCallStreamParser = () => {
   let emittedCallCount = 0;
 
   /**
-   * 在等待標籤出現時，安全地輸出已確定不是標籤字首的部分
-   * @param {string} text - 當前累積的文本
+   * 在等待標籤出現時，安全地輸出已確定不是標籤前綴的部分
+   * @param {string} text - 目前累積的文本
    * @returns {{ safe: string, remainder: string }} 切分結果
    */
   const splitSafeText = (text) => {

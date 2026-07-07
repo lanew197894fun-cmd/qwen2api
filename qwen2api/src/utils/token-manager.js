@@ -5,7 +5,7 @@ const { getProxyAgent, getChatBaseUrl, applyProxyToAxiosConfig } = require('./pr
 
 /**
  * 令牌管理器
- * 負責令牌的獲取、驗證、重新整理等操作
+ * 負責令牌的取得、驗證、重新整理等操作
  */
 class TokenManager {
     constructor() {
@@ -15,7 +15,7 @@ class TokenManager {
     }
 
     /**
-     * 獲取登入端點
+     * 取得登入端點
      * @returns {string} 登入端點URL
      */
     get loginEndpoint() {
@@ -23,10 +23,10 @@ class TokenManager {
     }
 
     /**
-     * 使用者登入獲取令牌
+     * 使用者登入取得令牌
      * @param {string} email - 郵箱
      * @param {string} password - 密碼
-     * @param {Object} [account] - 帳戶物件（用於解析帳號級代理；為空時回退到全域性 PROXY_URL）
+     * @param {Object} [account] - 賬戶物件（用於解析帳號級代理；為空時回退到全域 PROXY_URL）
      * @returns {Promise<string|null>} 令牌或null
      */
     async login(email, password, account) {
@@ -34,7 +34,7 @@ class TokenManager {
             const proxyAgent = getProxyAgent(account)
             const requestConfig = {
                 headers: this.defaultHeaders,
-                timeout: 10000 // 10秒超時
+                timeout: 10000 // 10秒逾時
             }
 
             // 新增代理配置
@@ -52,14 +52,14 @@ class TokenManager {
                 logger.success(`${email} 登入成功：${response.data.token}`, 'AUTH')
                 return response.data.token
             } else {
-                logger.error(`${email} 登入響應缺少令牌`, 'AUTH')
+                logger.error(`${email} 登入回應缺少令牌`, 'AUTH')
                 return null
             }
         } catch (error) {
             if (error.response) {
                 logger.error(`${email} 登入失敗 (${error.response.status})`, 'AUTH', '', error)
             } else if (error.request) {
-                logger.error(`${email} 登入失敗: 網路請求超時或無響應`, 'AUTH')
+                logger.error(`${email} 登入失敗: 網絡請求逾時或無回應`, 'AUTH')
             } else {
                 logger.error(`${email} 登入失敗`, 'AUTH', '', error)
             }
@@ -109,7 +109,7 @@ class TokenManager {
     }
 
     /**
-     * 獲取令牌剩餘有效時間（小時）
+     * 取得令牌剩餘有效時間（小時）
      * @param {string} token - JWT令牌
      * @returns {number} 剩餘小時數，-1表示無效令牌
      */
@@ -123,9 +123,9 @@ class TokenManager {
     }
 
     /**
-     * 重新整理單個帳戶的令牌
-     * @param {Object} account - 帳戶物件 {email, password, token, expires}
-     * @returns {Promise<Object|null>} 更新後的帳戶物件或null
+     * 重新整理單個賬戶的令牌
+     * @param {Object} account - 賬戶物件 {email, password, token, expires}
+     * @returns {Promise<Object|null>} 更新後的賬戶物件或null
      */
     async refreshToken(account) {
         try {
@@ -157,10 +157,10 @@ class TokenManager {
     }
 
     /**
-     * 批次重新整理即將過期的令牌
-     * @param {Array} accounts - 帳戶列表
+     * 批量重新整理即將過期的令牌
+     * @param {Array} accounts - 賬戶列表
      * @param {number} thresholdHours - 過期閾值（小時）
-     * @param {Function} onEachRefresh - 每次重新整理成功後的回撥函式 (updatedAccount, index, total) => void
+     * @param {Function} onEachRefresh - 每次重新整理成功後的回調函式 (updatedAccount, index, total) => void
      * @returns {Promise<Object>} 重新整理結果 {refreshed: Array, failed: Array}
      */
     async batchRefreshTokens(accounts, thresholdHours = 24, onEachRefresh = null) {
@@ -185,12 +185,12 @@ class TokenManager {
             if (updatedAccount) {
                 refreshed.push(updatedAccount)
 
-                // 如果提供了回撥函式，立即呼叫
+                // 如果提供了回調函式，立即調用
                 if (onEachRefresh && typeof onEachRefresh === 'function') {
                     try {
                         await onEachRefresh(updatedAccount, i + 1, needsRefresh.length)
                     } catch (error) {
-                        logger.error(`重新整理回撥函式執行失敗 (${account.email})`, 'TOKEN', '', error)
+                        logger.error(`重新整理回調函式執行失敗 (${account.email})`, 'TOKEN', '', error)
                     }
                 }
             } else {
@@ -206,8 +206,8 @@ class TokenManager {
     }
 
     /**
-     * 獲取健康的令牌統計資訊
-     * @param {Array} accounts - 帳戶列表
+     * 取得健康的令牌統計資訊
+     * @param {Array} accounts - 賬戶列表
      * @returns {Object} 統計資訊
      */
     getTokenHealthStats(accounts) {

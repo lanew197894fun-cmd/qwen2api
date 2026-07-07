@@ -8,8 +8,9 @@ const { adminKeyVerify } = require('../middlewares/authorization')
 const { deleteAccount, saveAccounts, refreshAccountToken } = require('../utils/setting')
 const { parseAccountLine } = require('../utils/account-parser')
 const { isValidProxyUrl } = require('../utils/proxy-helper')
+const { DEFAULT_CLI_QUOTA_LIMIT, getAccountCliState } = require('../utils/cli-support')
 
-// 僅在 proxy 欄位存在時觸發；空字串/null 一律視為"清除代理"，無需校驗
+// 僅在 proxy 字段存在時觸發；空字符串/null 一律視為"清除代理"，無需校驗
 const PROXY_FORMAT_ERROR = '代理 URL 格式無效，應以 http://、https:// 或 socks5:// 開頭'
 
 const batchAccountTasks = new Map()
@@ -17,13 +18,13 @@ const BATCH_TASK_RETENTION_MS = 1000 * 60 * 30
 const BATCH_TASK_RESULT_LIMIT = 12
 
 /**
- * 生成批次任務 ID
+ * 產生批量任務 ID
  * @returns {string} 任務 ID
  */
 const generateBatchTaskId = () => `batch_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 
 /**
- * 計劃清理已完成的批次任務
+ * 計劃清理已完成的批量任務
  * @param {string} taskId - 任務 ID
  */
 const scheduleBatchTaskCleanup = (taskId) => {
@@ -33,7 +34,7 @@ const scheduleBatchTaskCleanup = (taskId) => {
 }
 
 /**
- * 解析批次帳號文本
+ * 解析批量帳號文本
  * 行格式（與 ENV ACCOUNTS 一致）：
  *   email:password                  — 老格式
  *   email:password|proxy_url        — 新格式，附帶帳號級代理
@@ -56,7 +57,7 @@ const parseBatchAccountsText = (accountsText) => {
       invalidCount++
       continue
     }
-    // 行格式合法但 proxy 欄位格式錯誤，整行視為無效，避免後續登入後才暴露失敗
+    // 行格式合法但 proxy 字段格式錯誤，整行視為無效，避免後續登入後才暴露失敗
     if (parsed.proxy && !isValidProxyUrl(parsed.proxy)) {
       invalidCount++
       continue
@@ -72,7 +73,7 @@ const parseBatchAccountsText = (accountsText) => {
 }
 
 /**
- * 構造新的批次任務
+ * 構造新的批量任務
  * @param {number} total - 總條目數
  * @param {number} valid - 有效條目數
  * @param {number} skipped - 跳過條目數
@@ -84,7 +85,7 @@ const createBatchAccountTask = (total, valid, skipped, invalid) => {
   const task = {
     id: generateBatchTaskId(),
     status: 'pending',
-    message: '任務已建立，等待執行',
+    message: '任務已創建，等待執行',
     concurrency,
     total,
     valid,
@@ -107,7 +108,7 @@ const createBatchAccountTask = (total, valid, skipped, invalid) => {
 }
 
 /**
- * 記錄批次任務最近結果
+ * 記錄批量任務最近結果
  * @param {object} task - 任務物件
  * @param {object} result - 單條結果
  */
@@ -119,7 +120,7 @@ const pushBatchTaskResult = (task, result) => {
 }
 
 /**
- * 獲取批次任務快照
+ * 取得批量任務快照
  * @param {object} task - 任務物件
  * @returns {object} 可序列化的任務狀態
  */
@@ -152,18 +153,18 @@ const getBatchTaskSnapshot = (task) => {
 }
 
 /**
- * 更新批次任務文案
+ * 更新批量任務文案
  * @param {object} task - 任務物件
  */
 const updateBatchTaskMessage = (task) => {
   if (task.status === 'completed') {
-    task.message = `批次新增完成，成功 ${task.success} 個，失敗 ${task.failed} 個`
+    task.message = `批量新增完成，成功 ${task.success} 個，失敗 ${task.failed} 個`
     return
   }
 
   if (task.status === 'failed') {
     if (!task.message) {
-      task.message = '批次新增執行失敗'
+      task.message = '批量新增執行失敗'
     }
     return
   }
@@ -177,7 +178,7 @@ const updateBatchTaskMessage = (task) => {
 }
 
 /**
- * 執行單個帳號的批次登入任務
+ * 執行單個帳號的批量登入任務
  * @param {object} task - 任務物件
  * @param {{ email: string, password: string, proxy: string|null }} account - 帳號資訊
  */
@@ -187,7 +188,7 @@ const processBatchAccountItem = async (task, account) => {
   updateBatchTaskMessage(task)
 
   try {
-    const authToken = await accountManager.login(email, password)
+    const authToken = await accountManager.login(email, password, proxy)
     if (!authToken) {
       throw new Error('登入失敗')
     }
@@ -195,7 +196,7 @@ const processBatchAccountItem = async (task, account) => {
     const decoded = JwtDecode(authToken)
     const saved = await accountManager.addAccountWithToken(email, password, authToken, decoded.exp, proxy)
     if (!saved) {
-      throw new Error('儲存失敗')
+      throw new Error('保存失敗')
     }
 
     task.success++
@@ -216,7 +217,7 @@ const processBatchAccountItem = async (task, account) => {
       message: error.message || '登入失敗'
     })
 
-    logger.error(`批次登入帳號失敗: ${email}`, 'ACCOUNT', '', error)
+    logger.error(`批量登入帳號失敗: ${email}`, 'ACCOUNT', '', error)
   } finally {
     task.processed++
     task.completed++
@@ -226,7 +227,7 @@ const processBatchAccountItem = async (task, account) => {
 }
 
 /**
- * 執行批次帳號新增任務
+ * 執行批量帳號新增任務
  * @param {object} task - 任務物件
  * @param {Array<{ email: string, password: string }>} newAccounts - 待處理帳號
  * @returns {Promise<object>} 最終任務物件
@@ -258,15 +259,15 @@ const runBatchAccountTask = async (task, newAccounts) => {
   } catch (error) {
     task.status = 'failed'
     task.finishedAt = Date.now()
-    task.message = error.message || '批次新增執行失敗'
-    logger.error('批次建立帳號失敗', 'ACCOUNT', '', error)
+    task.message = error.message || '批量新增執行失敗'
+    logger.error('批量創建帳號失敗', 'ACCOUNT', '', error)
     scheduleBatchTaskCleanup(task.id)
     return task
   }
 }
 
 /**
- * 獲取所有帳號（分頁）
+ * 取得所有帳號（分頁）
  * 
  * @param {number} page 頁碼
  * @param {number} pageSize 每頁數量
@@ -278,14 +279,14 @@ router.get('/getAllAccounts', adminKeyVerify, async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 1000
     const start = (page - 1) * pageSize
 
-    // 獲取所有帳號鍵
+    // 取得所有帳號鍵
     const allAccounts = accountManager.getAllAccountKeys()
     const total = allAccounts.length
 
     // 分頁處理
     const paginatedAccounts = allAccounts.slice(start, start + pageSize)
 
-    // 獲取每個帳號的詳細資訊
+    // 取得每個帳號的詳細資訊
     const accounts = paginatedAccounts.map(account => {
       return {
         email: account.email,
@@ -303,7 +304,7 @@ router.get('/getAllAccounts', adminKeyVerify, async (req, res) => {
       data: accounts
     })
   } catch (error) {
-    logger.error('獲取帳號列表失敗', 'ACCOUNT', '', error)
+    logger.error('取得帳號列表失敗', 'ACCOUNT', '', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -325,7 +326,7 @@ router.post('/setAccount', adminKeyVerify, async (req, res) => {
       return res.status(400).json({ error: '郵箱和密碼不能為空' })
     }
 
-    // 規範化 proxy：空字串/純空白/非字串 → null
+    // 規範化 proxy：空字符串/純空白/非字符串 → null
     const normalizedProxy = (typeof proxy === 'string' && proxy.trim()) ? proxy.trim() : null
 
     // 防禦性校驗：攔截明顯的拼寫錯誤（缺協議等），執行時才暴露的錯誤對使用者不友好
@@ -339,7 +340,7 @@ router.post('/setAccount', adminKeyVerify, async (req, res) => {
       return res.status(409).json({ error: '帳號已存在' })
     }
 
-    const authToken = await accountManager.login(email, password)
+    const authToken = await accountManager.login(email, password, normalizedProxy)
     if (!authToken) {
       return res.status(401).json({ error: '登入失敗' })
     }
@@ -352,13 +353,13 @@ router.post('/setAccount', adminKeyVerify, async (req, res) => {
     if (success) {
       res.status(200).json({
         email,
-        message: '帳號建立成功'
+        message: '帳號創建成功'
       })
     } else {
-      res.status(500).json({ error: '帳號建立失敗' })
+      res.status(500).json({ error: '帳號創建失敗' })
     }
   } catch (error) {
-    logger.error('建立帳號失敗', 'ACCOUNT', '', error)
+    logger.error('創建帳號失敗', 'ACCOUNT', '', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -397,7 +398,7 @@ router.delete('/deleteAccount', adminKeyVerify, async (req, res) => {
 
 /**
  * POST /setAccounts
- * 批次新增帳號（並行處理）
+ * 批量新增帳號（並行處理）
  *
  * @param {string} accounts 帳號列表
  * @returns {Object} 新增結果統計
@@ -440,7 +441,7 @@ router.post('/setAccounts', adminKeyVerify, async (req, res) => {
       runBatchAccountTask(task, newAccounts)
 
       return res.status(202).json({
-        message: '批次新增任務已建立',
+        message: '批量新增任務已創建',
         ...getBatchTaskSnapshot(task)
       })
     }
@@ -448,18 +449,18 @@ router.post('/setAccounts', adminKeyVerify, async (req, res) => {
     await runBatchAccountTask(task, newAccounts)
 
     res.json({
-      message: '批次新增完成',
+      message: '批量新增完成',
       ...getBatchTaskSnapshot(task)
     })
   } catch (error) {
-    logger.error('批次建立帳號失敗', 'ACCOUNT', '', error)
+    logger.error('批量創建帳號失敗', 'ACCOUNT', '', error)
     res.status(500).json({ error: error.message })
   }
 })
 
 /**
  * GET /batchTasks/:taskId
- * 獲取批次新增任務進度
+ * 取得批量新增任務進度
  *
  * @param {string} taskId 任務 ID
  * @returns {Object} 任務進度
@@ -478,7 +479,7 @@ router.get('/batchTasks/:taskId', adminKeyVerify, async (req, res) => {
 /**
  * POST /updateAccountProxy
  * 更新帳號專屬代理 URL
- * 傳入空字串/null 視為清除代理，回退到全域性 PROXY_URL（若存在）
+ * 傳入空字符串/null 視為清除代理，回退到全域 PROXY_URL（若存在）
  *
  * @param {string} email 郵箱
  * @param {string|null} proxy 新代理 URL，空表示清除
@@ -569,16 +570,16 @@ router.post('/refreshAllAccounts', adminKeyVerify, async (req, res) => {
   try {
     const { thresholdHours = 24 } = req.body
 
-    // 執行批次重新整理
+    // 執行批量重新整理
     const refreshedCount = await accountManager.autoRefreshTokens(thresholdHours)
 
     res.json({
-      message: '批次重新整理完成',
+      message: '批量重新整理完成',
       refreshedCount: refreshedCount,
       thresholdHours: thresholdHours
     })
   } catch (error) {
-    logger.error('批次重新整理帳號令牌失敗', 'ACCOUNT', '', error)
+    logger.error('批量重新整理帳號令牌失敗', 'ACCOUNT', '', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -605,5 +606,153 @@ router.post('/forceRefreshAllAccounts', adminKeyVerify, async (req, res) => {
   }
 })
 
+
+/**
+ * GET /accountStats
+ * 回傳 dashboard 用 daily stats + per-account status
+ * Status priority: cooldown > warn > token_expiring > active
+ *
+ * @returns {{
+ *   accounts: Array<{
+ *     email: string,
+ *     stats: { chat: {input,output}, cli: {calls,input,output} },
+ *     cliRequestNumber: number,
+ *     status: { kind: string, cooldownEndsAt: number|null, lastErrorAt: number|null, lastErrorCode: string|number|null }
+ *   }>,
+ *   cliQuotaLimit: number
+ * }}
+ */
+router.get('/accountStats', adminKeyVerify, async (req, res) => {
+  try {
+    const now = Date.now()
+
+    const rotatorStats = accountManager.accountRotator.getStats()
+    const usageStats = rotatorStats.usageStats || {}
+
+    const accounts = accountManager.getAllAccountKeys().map(account => {
+      const email = account.email
+      const rotatorRecord = usageStats[email] || {}
+      const cliState = getAccountCliState(account, rotatorRecord, now)
+
+      return {
+        email,
+        ...cliState
+      }
+    })
+
+    const cliQuotaLimit = accounts.some(account => account.cliQuotaLimit === DEFAULT_CLI_QUOTA_LIMIT)
+      ? DEFAULT_CLI_QUOTA_LIMIT
+      : 0
+
+    res.json({
+      accounts,
+      cliQuotaLimit
+    })
+  } catch (error) {
+    logger.error('取得賬戶 stats 失敗', 'ACCOUNT', '', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * GET /statsHistory
+ * 回傳 dashboard /statistics 用 — 歷史每日 token 消耗 (90 天 retention).
+ * 今日資料合併自 account.stats (live counter) 到 history[today]，
+ * 避免新部署後首日 UI 全空。
+ *
+ * Known edge-case: a ~5 s window at 00:00 between resetting stats=0 and
+ * writing statsHistory[yesterday] via saveAllAccounts — a brief "sag"
+ * once per day. Not patched (seconds, once per day).
+ *
+ * @returns {{
+ *   today: string,                            // YYYY-MM-DD in server TZ
+ *   accounts: Array<{
+ *     email: string,
+ *     history: Record<string, { chat: {input,output}, cli: {calls,input,output} }>
+ *   }>
+ * }}
+ */
+router.get('/statsHistory', adminKeyVerify, async (req, res) => {
+  try {
+    // today is the same helper used by the archival routine (paired with
+    // _getYesterdayKey). The frontend MUST build ranges (currentMonth /
+    // prevMonth / last90) off this value, not new Date() — otherwise
+    // differing browser/container TZs can shift month boundaries.
+    const today = accountManager.getTodayKey()
+
+    const accounts = accountManager.getAllAccountKeys().map(account => {
+      // Deep copy of history: the 5 s window at 00:00 has _resetDailyCounters
+      // mutating nested chat/cli entries; a shallow top-level copy does not
+      // protect against that. The deep copy avoids handing the client a
+      // half-reset snapshot.
+      const history = {}
+      const src = account.statsHistory || {}
+      for (const key of Object.keys(src)) {
+        const entry = src[key] || {}
+        const chat = entry.chat || {}
+        const cli = entry.cli || {}
+        history[key] = {
+          chat: { input: Number(chat.input) || 0, output: Number(chat.output) || 0 },
+          cli: {
+            calls: Number(cli.calls) || 0,
+            input: Number(cli.input) || 0,
+            output: Number(cli.output) || 0
+          }
+        }
+      }
+
+      // Today is the live counter from account.stats.
+      // Deep copy of chat/cli — otherwise a concurrent accumulateStats call
+      // may mutate the object already handed out.
+      const s = account.stats || { chat: { input: 0, output: 0 }, cli: { calls: 0, input: 0, output: 0 } }
+      history[today] = {
+        chat: { input: Number(s.chat?.input) || 0, output: Number(s.chat?.output) || 0 },
+        cli: {
+          calls: Number(s.cli?.calls) || 0,
+          input: Number(s.cli?.input) || 0,
+          output: Number(s.cli?.output) || 0
+        }
+      }
+
+      return { email: account.email, history }
+    })
+
+    res.json({ today, accounts })
+  } catch (error) {
+    logger.error('取得 statsHistory 失敗', 'ACCOUNT', '', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * POST /debug/archiveYesterday
+ * Debug-only: manual trigger for the archival/reset routine (used while
+ * smoke-testing the storage layer).
+ *
+ * Registered ONLY when ENABLE_STATS_DEBUG_ARCHIVE === 'true'.
+ * NODE_ENV is intentionally NOT used — this repo does not set it
+ * (src/start.js, ecosystem.config.js), so 'production' cannot be guaranteed.
+ *
+ * In any normal (including production) configuration the route is absent —
+ * POST returns 404. Caveat: GET on any unknown path falls into app.get('*')
+ * and returns the SPA with status 200, so always verify route absence with
+ * `-X POST`.
+ */
+if (process.env.ENABLE_STATS_DEBUG_ARCHIVE === 'true') {
+  router.post('/debug/archiveYesterday', adminKeyVerify, async (req, res) => {
+    try {
+      await accountManager.archiveYesterdayForTest()
+      res.json({ ok: true, archivedAt: new Date().toISOString() })
+    } catch (error) {
+      // The readiness guard inside archiveYesterdayForTest throws with this message.
+      if (error && error.message && error.message.includes('not initialized')) {
+        return res.status(503).json({ error: 'account manager not initialized, try again' })
+      }
+      logger.error('debug/archiveYesterday 失敗', 'ACCOUNT', '', error)
+      res.status(500).json({ error: error.message })
+    }
+  })
+  logger.info('已啟用 debug/archiveYesterday 端點 (ENABLE_STATS_DEBUG_ARCHIVE=true)', 'ACCOUNT')
+}
 
 module.exports = router

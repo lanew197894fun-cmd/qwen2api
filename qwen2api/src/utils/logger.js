@@ -1,320 +1,349 @@
-const fs = require('fs')
-const path = require('path')
+const fs = require("fs");
+const path = require("path");
 
 /**
- * 日誌管理器
- * 統一管理專案中的日誌輸出，支援分級列印、時間戳、Emoji標籤等功能
+ * 日誌管理器 — 強化版
+ * 核心改進：ERROR/WARN 級別不再輸出至 console，避免混入 SSE 串流
  */
 class Logger {
   constructor(options = {}) {
     this.options = {
-      // 日誌級別: DEBUG < INFO < WARN < ERROR
-      level: options.level || 'INFO',
-      // 是否啟用檔案日誌
+      level: options.level || "INFO",
       enableFileLog: options.enableFileLog || false,
-      // 日誌檔案路徑
-      logDir: options.logDir || path.join(__dirname, '../../logs'),
-      // 日誌檔名格式
-      logFileName: options.logFileName || 'app.log',
-      // 是否顯示時間戳
+      logDir: options.logDir || path.join(__dirname, "../../logs"),
+      logFileName: options.logFileName || "app.log",
       showTimestamp: options.showTimestamp !== false,
-      // 是否顯示日誌級別
       showLevel: options.showLevel !== false,
-      // 是否顯示模組名
       showModule: options.showModule !== false,
-      // 時間格式
-      timeFormat: options.timeFormat || 'YYYY-MM-DD HH:mm:ss',
-      // 最大日誌檔案大小 (MB)
+      timeFormat: options.timeFormat || "YYYY-MM-DD HH:mm:ss",
       maxFileSize: options.maxFileSize || 10,
-      // 保留的日誌檔案數量
-      maxFiles: options.maxFiles || 5
-    }
+      maxFiles: options.maxFiles || 5,
+      // ⚡ 新增：是否允許控制台輸出（預設關閉，避免混入 SSE）
+      allowConsoleOutput: options.allowConsoleOutput === true,
+    };
 
-    // 日誌級別對映
     this.levels = {
       DEBUG: 0,
       INFO: 1,
       WARN: 2,
-      ERROR: 3
-    }
+      ERROR: 3,
+    };
 
-    // Emoji 標籤對映
     this.emojis = {
-      DEBUG: '🔍',
-      INFO: '📝',
-      WARN: '⚠️',
-      ERROR: '❌',
-      SUCCESS: '✅',
-      NETWORK: '🌐',
-      DATABASE: '🗄️',
-      AUTH: '🔐',
-      UPLOAD: '📤',
-      DOWNLOAD: '📥',
-      CACHE: '💾',
-      CONFIG: '⚙️',
-      SERVER: '🚀',
-      CLIENT: '👤',
-      REDIS: '🔴',
-      TOKEN: '🎫',
-      SEARCH: '🔍',
-      CHAT: '💬',
-      MODEL: '🤖',
-      FILE: '📁',
-      TIME: '⏰',
-      MEMORY: '🧠',
-      PROCESS: '⚡'
-    }
+      DEBUG: "🔍",
+      INFO: "📝",
+      WARN: "⚠️",
+      ERROR: "❌",
+      SUCCESS: "✅",
+      NETWORK: "🌐",
+      DATABASE: "🗄️",
+      AUTH: "🔐",
+      UPLOAD: "📤",
+      DOWNLOAD: "📥",
+      CACHE: "💾",
+      CONFIG: "⚙️",
+      SERVER: "🚀",
+      CLIENT: "👤",
+      REDIS: "🔴",
+      TOKEN: "🎫",
+      SEARCH: "🔍",
+      CHAT: "💬",
+      MODEL: "🤖",
+      FILE: "📁",
+      TIME: "⏰",
+      MEMORY: "🧠",
+      PROCESS: "⚡",
+    };
 
-    // 顏色程式碼
     this.colors = {
-      DEBUG: '\x1b[36m',    // 青色
-      INFO: '\x1b[32m',     // 綠色
-      WARN: '\x1b[33m',     // 黃色
-      ERROR: '\x1b[31m',    // 紅色
-      RESET: '\x1b[0m',     // 重置
-      BRIGHT: '\x1b[1m',    // 加粗
-      DIM: '\x1b[2m'        // 暗淡
-    }
+      DEBUG: "\x1b[36m",
+      INFO: "\x1b[32m",
+      WARN: "\x1b[33m",
+      ERROR: "\x1b[31m",
+      RESET: "\x1b[0m",
+      BRIGHT: "\x1b[1m",
+      DIM: "\x1b[2m",
+    };
 
-    // 初始化日誌目錄
     if (this.options.enableFileLog) {
-      this.initLogDirectory()
+      this.initLogDirectory();
     }
   }
 
-  /**
-   * 初始化日誌目錄
-   */
   initLogDirectory() {
     try {
       if (!fs.existsSync(this.options.logDir)) {
-        fs.mkdirSync(this.options.logDir, { recursive: true })
+        fs.mkdirSync(this.options.logDir, { recursive: true });
       }
-    } catch (error) {
-      console.error('建立日誌目錄失敗:', error.message)
-    }
+    } catch (_) {}
   }
 
-  /**
-   * 檢查日誌級別是否應該輸出
-   * @param {string} level - 日誌級別
-   * @returns {boolean}
-   */
   shouldLog(level) {
-    return this.levels[level] >= this.levels[this.options.level]
+    return this.levels[level] >= this.levels[this.options.level];
   }
 
-  /**
-   * 格式化時間戳
-   * @returns {string}
-   */
   formatTimestamp() {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    const seconds = String(now.getSeconds()).padStart(2, '0')
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const seconds = String(now.getSeconds()).padStart(2, "0");
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
-  /**
-   * 格式化日誌訊息
-   * @param {string} level - 日誌級別
-   * @param {string} message - 日誌訊息
-   * @param {string} module - 模組名
-   * @param {string} emoji - Emoji標籤
-   * @returns {Object} 格式化後的訊息物件
-   */
-  formatMessage(level, message, module = '', emoji = '') {
-    const timestamp = this.options.showTimestamp ? this.formatTimestamp() : ''
-    const levelStr = this.options.showLevel ? `[${level}]` : ''
-    const moduleStr = this.options.showModule && module ? `[${module}]` : ''
-    const emojiStr = emoji || this.emojis[level] || ''
-    
-    // 控制台輸出格式（帶顏色）
+  formatMessage(level, message, module = "", emoji = "") {
+    const timestamp = this.options.showTimestamp ? this.formatTimestamp() : "";
+    const levelStr = this.options.showLevel ? `[${level}]` : "";
+    const moduleStr = this.options.showModule && module ? `[${module}]` : "";
+    const emojiStr = emoji || this.emojis[level] || "";
+
     const consoleMessage = [
       this.colors.DIM + timestamp + this.colors.RESET,
       this.colors[level] + levelStr + this.colors.RESET,
       this.colors.BRIGHT + moduleStr + this.colors.RESET,
       emojiStr,
-      message
-    ].filter(Boolean).join(' ')
+      message,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-    // 檔案輸出格式（無顏色）
-    const fileMessage = [
-      timestamp,
-      levelStr,
-      moduleStr,
-      emojiStr,
-      message
-    ].filter(Boolean).join(' ')
+    const fileMessage = [timestamp, levelStr, moduleStr, emojiStr, message]
+      .filter(Boolean)
+      .join(" ");
 
-    return { consoleMessage, fileMessage }
+    return { consoleMessage, fileMessage };
   }
 
-  /**
-   * 寫入日誌檔案
-   * @param {string} message - 日誌訊息
-   */
   writeToFile(message) {
-    if (!this.options.enableFileLog) return
+    if (!this.options.enableFileLog) return;
 
     try {
-      const logFile = path.join(this.options.logDir, this.options.logFileName)
-      const logEntry = `${message}\n`
-      
-      // 檢查檔案大小並輪轉
-      this.rotateLogFile(logFile)
-      
-      fs.appendFileSync(logFile, logEntry, 'utf8')
-    } catch (error) {
-      console.error('寫入日誌檔案失敗:', error.message)
-    }
+      const logFile = path.join(this.options.logDir, this.options.logFileName);
+      const logEntry = `${message}\n`;
+
+      this.rotateLogFile(logFile);
+
+      fs.appendFileSync(logFile, logEntry, "utf8");
+    } catch (_) {}
   }
 
-  /**
-   * 日誌檔案輪轉
-   * @param {string} logFile - 日誌檔案路徑
-   */
   rotateLogFile(logFile) {
     try {
-      if (!fs.existsSync(logFile)) return
+      if (!fs.existsSync(logFile)) return;
 
-      const stats = fs.statSync(logFile)
-      const fileSizeMB = stats.size / (1024 * 1024)
+      const stats = fs.statSync(logFile);
+      const fileSizeMB = stats.size / (1024 * 1024);
 
       if (fileSizeMB > this.options.maxFileSize) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-        const backupFile = logFile.replace('.log', `_${timestamp}.log`)
-        
-        fs.renameSync(logFile, backupFile)
-        
-        // 清理舊的日誌檔案
-        this.cleanOldLogFiles()
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const backupFile = logFile.replace(".log", `_${timestamp}.log`);
+
+        fs.renameSync(logFile, backupFile);
+
+        this.cleanOldLogFiles();
       }
-    } catch (error) {
-      console.error('日誌檔案輪轉失敗:', error.message)
-    }
+    } catch (_) {}
   }
 
-  /**
-   * 清理舊的日誌檔案
-   */
   cleanOldLogFiles() {
     try {
-      const files = fs.readdirSync(this.options.logDir)
+      const files = fs.readdirSync(this.options.logDir);
       const logFiles = files
-        .filter(file => file.endsWith('.log') && file !== this.options.logFileName)
-        .map(file => ({
+        .filter(
+          (file) => file.endsWith(".log") && file !== this.options.logFileName,
+        )
+        .map((file) => ({
           name: file,
           path: path.join(this.options.logDir, file),
-          mtime: fs.statSync(path.join(this.options.logDir, file)).mtime
+          mtime: fs.statSync(path.join(this.options.logDir, file)).mtime,
         }))
-        .sort((a, b) => b.mtime - a.mtime)
+        .sort((a, b) => b.mtime - a.mtime);
 
-      // 保留最新的幾個檔案，刪除其餘的
       if (logFiles.length > this.options.maxFiles) {
-        const filesToDelete = logFiles.slice(this.options.maxFiles)
-        filesToDelete.forEach(file => {
-          fs.unlinkSync(file.path)
-        })
+        const filesToDelete = logFiles.slice(this.options.maxFiles);
+        filesToDelete.forEach((file) => {
+          fs.unlinkSync(file.path);
+        });
       }
-    } catch (error) {
-      console.error('清理舊日誌檔案失敗:', error.message)
-    }
+    } catch (_) {}
   }
 
   /**
-   * 通用日誌方法
-   * @param {string} level - 日誌級別
-   * @param {string} message - 日誌訊息
-   * @param {string} module - 模組名
-   * @param {string} emoji - Emoji標籤
-   * @param {any} data - 附加資料
+   * ⚡ 核心修復：ERROR/WARN 不再輸出至 console
+   * 僅在 allowConsoleOutput=true 時才輸出（供手調用）
    */
-  log(level, message, module = '', emoji = '', data = null) {
-    if (!this.shouldLog(level)) return
+  log(level, message, module = "", emoji = "", data = null) {
+    if (!this.shouldLog(level)) return;
 
-    const { consoleMessage, fileMessage } = this.formatMessage(level, message, module, emoji)
-    
-    // 控制台輸出
-    if (level === 'ERROR') {
-      console.error(consoleMessage)
-    } else if (level === 'WARN') {
-      console.warn(consoleMessage)
-    } else {
-      console.log(consoleMessage)
+    const { consoleMessage, fileMessage } = this.formatMessage(
+      level,
+      message,
+      module,
+      emoji,
+    );
+
+    // ⚡ ERROR 永遠輸出至 stderr（不依賴 allowConsoleOutput）
+    // 原因：stderr 與 SSE 串流（stdout）完全隔離，無混入風險
+    // 且錯誤日誌對除錯至關重要，不應被靜默吞掉
+    if (level === "ERROR") {
+      process.stderr.write(consoleMessage + "\n");
+      if (data !== null) {
+        process.stderr.write(JSON.stringify(data) + "\n");
+      }
+    } else if (this.options.allowConsoleOutput) {
+      if (level === "WARN") {
+        process.stderr.write(consoleMessage + "\n");
+      } else {
+        process.stdout.write(consoleMessage + "\n");
+      }
+
+      if (data !== null) {
+        process.stdout.write(JSON.stringify(data) + "\n");
+      }
     }
 
-    // 輸出附加資料
-    if (data !== null) {
-      console.log(data)
+    // 檔案輸出（始終啟用，若 enableFileLog=true）
+    this.writeToFile(
+      fileMessage + (data ? `\n${JSON.stringify(data, null, 2)}` : ""),
+    );
+  }
+
+  debug(message, module = "", emoji = "", data = null) {
+    this.log("DEBUG", message, module, emoji || this.emojis.DEBUG, data);
+  }
+
+  info(message, module = "", emoji = "", data = null) {
+    this.log("INFO", message, module, emoji || this.emojis.INFO, data);
+  }
+
+  warn(message, module = "", emoji = "", data = null) {
+    this.log("WARN", message, module, emoji || this.emojis.WARN, data);
+  }
+
+  error(message, module = "", emoji = "", data = null) {
+    this.log("ERROR", message, module, emoji || this.emojis.ERROR, data);
+  }
+
+  success(message, module = "", data = null) {
+    this.info(message, module, this.emojis.SUCCESS, data);
+  }
+
+  network(message, module = "", data = null) {
+    this.info(message, module, this.emojis.NETWORK, data);
+  }
+
+  database(message, module = "", data = null) {
+    this.info(message, module, this.emojis.DATABASE, data);
+  }
+
+  auth(message, module = "", data = null) {
+    this.info(message, module, this.emojis.AUTH, data);
+  }
+
+  redis(message, module = "", data = null) {
+    this.info(message, module, this.emojis.REDIS, data);
+  }
+
+  chat(message, module = "", data = null) {
+    this.info(message, module, this.emojis.CHAT, data);
+  }
+
+  server(message, module = "", data = null) {
+    this.info(message, module, this.emojis.SERVER, data);
+  }
+
+  // ═══ 啟動專用方法：繞過 allowConsoleOutput，確保使用者看到啟動過程 ═══
+  startup(message, module = "") {
+    const level = "INFO";
+    if (!this.shouldLog(level)) return;
+    const { consoleMessage, fileMessage } = this.formatMessage(
+      level,
+      message,
+      module,
+      "📝",
+    );
+    process.stdout.write(consoleMessage + "\n");
+    this.writeToFile(fileMessage);
+  }
+
+  // 階段分隔線
+  phase(title) {
+    this.startup(`══════ ${title} ══════`, "PHASE");
+  }
+
+  // 計算終端機可視寬度（CJK/emoji 佔 2）
+  #visualLen(s) {
+    let len = 0;
+    for (let i = 0; i < s.length; i++) {
+      const cp = s.codePointAt(i);
+      if (cp > 0xffff) i++; // 跳過 surrogate pair 後半
+      len +=
+        (cp >= 0x1100 && cp <= 0x115f) ||
+        (cp >= 0x2e80 && cp <= 0xa4cf) ||
+        (cp >= 0xac00 && cp <= 0xd7af) ||
+        (cp >= 0xf900 && cp <= 0xfaff) ||
+        (cp >= 0xfe10 && cp <= 0xfe19) ||
+        (cp >= 0xfe30 && cp <= 0xfe6f) ||
+        (cp >= 0xff01 && cp <= 0xff60) ||
+        (cp >= 0xffe0 && cp <= 0xffe6) ||
+        (cp >= 0x1b000 && cp <= 0x1b0ff) ||
+        (cp >= 0x1f000 && cp <= 0x1f9ff) ||
+        (cp >= 0x20000 && cp <= 0x2ffff) ||
+        (cp >= 0x30000 && cp <= 0x3ffff)
+          ? 2
+          : 1;
     }
-
-    // 檔案輸出
-    this.writeToFile(fileMessage + (data ? `\n${JSON.stringify(data, null, 2)}` : ''))
+    return len;
   }
 
-  // 便捷方法
-  debug(message, module = '', emoji = '', data = null) {
-    this.log('DEBUG', message, module, emoji || this.emojis.DEBUG, data)
+  // 以可視寬度填補空白
+  #padVisual(s, target) {
+    const cur = this.#visualLen(s);
+    return cur >= target ? s : s + " ".repeat(target - cur);
   }
 
-  info(message, module = '', emoji = '', data = null) {
-    this.log('INFO', message, module, emoji || this.emojis.INFO, data)
-  }
+  // 印出格式化的 key-value 表格（用於最終配置摘要）
+  infoTable(title, data) {
+    const entries = Object.entries(data);
+    const keyW = Math.max(...entries.map((e) => this.#visualLen(e[0]))) + 2;
+    const valW =
+      Math.max(...entries.map((e) => this.#visualLen(String(e[1])))) + 2;
+    const total = keyW + valW + 5;
+    const line = "─".repeat(total);
 
-  warn(message, module = '', emoji = '', data = null) {
-    this.log('WARN', message, module, emoji || this.emojis.WARN, data)
-  }
+    // 標題行（以可視寬度置中）
+    process.stdout.write(`┌${line}┐\n`);
+    const tLen = this.#visualLen(title);
+    const tPad = Math.max(0, total - tLen - 2);
+    const tL = Math.floor(tPad / 2);
+    const tR = tPad - tL;
+    process.stdout.write(`│${" ".repeat(tL)} ${title} ${" ".repeat(tR)}│\n`);
+    process.stdout.write(`├${"─".repeat(keyW + 2)}┼${"─".repeat(valW + 2)}┤\n`);
 
-  error(message, module = '', emoji = '', data = null) {
-    this.log('ERROR', message, module, emoji || this.emojis.ERROR, data)
-  }
-
-  // 特定場景的便捷方法
-  success(message, module = '', data = null) {
-    this.info(message, module, this.emojis.SUCCESS, data)
-  }
-
-  network(message, module = '', data = null) {
-    this.info(message, module, this.emojis.NETWORK, data)
-  }
-
-  database(message, module = '', data = null) {
-    this.info(message, module, this.emojis.DATABASE, data)
-  }
-
-  auth(message, module = '', data = null) {
-    this.info(message, module, this.emojis.AUTH, data)
-  }
-
-  redis(message, module = '', data = null) {
-    this.info(message, module, this.emojis.REDIS, data)
-  }
-
-  chat(message, module = '', data = null) {
-    this.info(message, module, this.emojis.CHAT, data)
-  }
-
-  server(message, module = '', data = null) {
-    this.info(message, module, this.emojis.SERVER, data)
+    // 資料行（以可視寬度對齊）
+    for (const [k, v] of entries) {
+      process.stdout.write(
+        `│ ${this.#padVisual(k, keyW)} │ ${this.#padVisual(String(v), valW)} │\n`,
+      );
+    }
+    process.stdout.write(`└${line}┘\n`);
   }
 }
 
-// 建立預設例項
 const defaultLogger = new Logger({
-  level: process.env.LOG_LEVEL || 'INFO',
-  enableFileLog: process.env.ENABLE_FILE_LOG === 'true',
+  level: process.env.LOG_LEVEL || "INFO",
+  enableFileLog: process.env.ENABLE_FILE_LOG === "true",
   showModule: true,
   showTimestamp: true,
-  showLevel: true
-})
+  showLevel: true,
+  // ⚡ 預設關閉 console 輸出，避免混入 SSE 串流
+  allowConsoleOutput: process.env.ALLOW_CONSOLE_OUTPUT === "true",
+});
 
 module.exports = {
   Logger,
-  logger: defaultLogger
-}
+  logger: defaultLogger,
+};

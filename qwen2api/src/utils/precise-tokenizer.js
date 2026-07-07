@@ -16,7 +16,7 @@ function countTokens(text, model = 'gpt-3.5-turbo') {
 
   const encoding = tiktoken.encoding_for_model(model)
   const tokens = encoding.encode(text)
-  encoding.free() // 釋放記憶體
+  encoding.free() // 釋放內存
   return tokens.length
 }
 
@@ -33,7 +33,7 @@ function countMessagesTokens(messages, model = 'gpt-3.5-turbo') {
 
   let totalTokens = 0
 
-  // 每條訊息的基礎開銷（根據OpenAI檔案）
+  // 每條訊息的基礎開銷（根據OpenAI文檔）
   const messageOverhead = 4 // 每條訊息約4個token的格式開銷
 
   for (const message of messages) {
@@ -55,7 +55,7 @@ function countMessagesTokens(messages, model = 'gpt-3.5-turbo') {
       }
     }
 
-    // 函式呼叫等其他欄位的token計算
+    // 函式調用等其他字段的token計算
     if (message.function_call) {
       totalTokens += countTokens(JSON.stringify(message.function_call), model)
     }
@@ -68,7 +68,7 @@ function countMessagesTokens(messages, model = 'gpt-3.5-turbo') {
 }
 
 /**
- * 建立精準的usage物件
+ * 創建精準的usage物件
  * @param {Array|string} promptMessages - 提示訊息或文本
  * @param {string} completionText - 完成文本
  * @param {object} realUsage - 真實的usage資料（如果有）

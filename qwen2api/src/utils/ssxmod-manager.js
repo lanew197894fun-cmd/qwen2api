@@ -1,16 +1,16 @@
 /**
  * SSXMOD Cookie 管理器
- * 負責生成和定時重新整理 ssxmod_itna 和 ssxmod_itna2 Cookie
+ * 負責產生和定時重新整理 ssxmod_itna 和 ssxmod_itna2 Cookie
  */
 
-const { generateCookies } = require("./cookie-generator");
-const { logger } = require("./logger");
+const { generateCookies } = require('./cookie-generator');
+const { logger } = require('./logger');
 
-// 全域性 Cookie 儲存
+// 全域 Cookie 存儲
 let currentCookies = {
-  ssxmod_itna: "",
-  ssxmod_itna2: "",
-  timestamp: 0,
+    ssxmod_itna: '',
+    ssxmod_itna2: '',
+    timestamp: 0
 };
 
 // 重新整理間隔 (15分鐘)
@@ -23,79 +23,76 @@ let refreshTimer = null;
  * 重新整理 SSXMOD Cookie
  */
 function refreshCookies() {
-  try {
-    const result = generateCookies();
-    currentCookies = {
-      ssxmod_itna: result.ssxmod_itna,
-      ssxmod_itna2: result.ssxmod_itna2,
-      timestamp: result.timestamp,
-    };
-    logger.debug(`SSXMOD Cookie 已重新整理`, "SSXMOD");
-  } catch (error) {
-    logger.error("SSXMOD Cookie 重新整理失敗", "SSXMOD", "", error.message);
-  }
+    try {
+        const result = generateCookies();
+        currentCookies = {
+            ssxmod_itna: result.ssxmod_itna,
+            ssxmod_itna2: result.ssxmod_itna2,
+            timestamp: result.timestamp
+        };
+        logger.info(`SSXMOD Cookie 已重新整理`, 'SSXMOD');
+    } catch (error) {
+        logger.error('SSXMOD Cookie 重新整理失敗', 'SSXMOD', '', error.message);
+    }
 }
 
 /**
  * 初始化 SSXMOD 管理器
- * 啟動時生成一次 Cookie，並設定定時重新整理
+ * 啟動時產生一次 Cookie，並設定定時重新整理
  */
 function initSsxmodManager() {
-  // 立即生成一次
-  refreshCookies();
+    // 立即產生一次
+    refreshCookies();
 
-  // 設定定時重新整理 (每15分鐘)
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-  }
-  refreshTimer = setInterval(refreshCookies, REFRESH_INTERVAL);
+    // 設定定時重新整理 (每15分鐘)
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
+    refreshTimer = setInterval(refreshCookies, REFRESH_INTERVAL);
 
-  logger.debug(
-    `SSXMOD 管理器已啟動，重新整理間隔: ${REFRESH_INTERVAL / 1000 / 60} 分鐘`,
-    "SSXMOD",
-  );
+    logger.info(`SSXMOD 管理器已啟動，重新整理間隔: ${REFRESH_INTERVAL / 1000 / 60} 分鐘`, 'SSXMOD');
 }
 
 /**
- * 獲取當前 ssxmod_itna
+ * 取得目前 ssxmod_itna
  * @returns {string} ssxmod_itna 值
  */
 function getSsxmodItna() {
-  return currentCookies.ssxmod_itna;
+    return currentCookies.ssxmod_itna;
 }
 
 /**
- * 獲取當前 ssxmod_itna2
+ * 取得目前 ssxmod_itna2
  * @returns {string} ssxmod_itna2 值
  */
 function getSsxmodItna2() {
-  return currentCookies.ssxmod_itna2;
+    return currentCookies.ssxmod_itna2;
 }
 
 /**
- * 獲取完整的 Cookie 物件
+ * 取得完整的 Cookie 物件
  * @returns {Object} 包含 ssxmod_itna 和 ssxmod_itna2 的物件
  */
 function getCookies() {
-  return { ...currentCookies };
+    return { ...currentCookies };
 }
 
 /**
  * 停止定時重新整理
  */
 function stopRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-    logger.info("SSXMOD 定時重新整理已停止", "SSXMOD");
-  }
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+        logger.info('SSXMOD 定時重新整理已停止', 'SSXMOD');
+    }
 }
 
 module.exports = {
-  initSsxmodManager,
-  getSsxmodItna,
-  getSsxmodItna2,
-  getCookies,
-  refreshCookies,
-  stopRefresh,
+    initSsxmodManager,
+    getSsxmodItna,
+    getSsxmodItna2,
+    getCookies,
+    refreshCookies,
+    stopRefresh
 };
