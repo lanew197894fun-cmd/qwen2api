@@ -127,8 +127,8 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_DIR="$(dirname "$ROOT")/qwen2api-plugin"
 
 # 清理舊程式
-kill -9 $(lsof -ti:3000) 2>/dev/null || true
-kill -9 $(lsof -ti:3456) 2>/dev/null || true
+kill -9 $(lsof -ti:3000 -sTCP:LISTEN) 2>/dev/null || true
+kill -9 $(lsof -ti:3456 -sTCP:LISTEN) 2>/dev/null || true
 sleep 1
 
 echo "🚀 啟動 Qwen2API (背景)..."

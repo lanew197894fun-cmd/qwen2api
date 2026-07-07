@@ -10,7 +10,7 @@
 
 # qwen2api 安全審計狀態
 
-> **檔案路徑：** `D:\Tools\opencode\opencode-manager\projects\independent\qwen2api\AUDIT_STATUS.md`
+> **檔案路徑：** `D:\opencode\opencode-manager\projects\independent\qwen2api\AUDIT_STATUS.md`
 > **恢復指令（壓縮後使用）：** 用 read 工具讀取此檔案，從「未完成」繼續
 > **指標檔（備用）：** `.opencode/qwen2api-audit-pointer.md`
 
