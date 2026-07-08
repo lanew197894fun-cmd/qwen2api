@@ -17,8 +17,10 @@
     ]
   },
   "dependencies": {
+    "@lancedb/lancedb": "^0.31.0",
     "@opencode-ai/plugin": "^1.14.41",
     "@opencode-ai/sdk": "^1.14.41",
+    "apache-arrow": "^21.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
